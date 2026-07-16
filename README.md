@@ -47,7 +47,7 @@ Findings flagged by **both** reviewers are marked as such, which is itself a str
 ## Install
 
 ```
-/plugin marketplace add MarceloCajueiro/cajueiro-claude-plugins
+/plugin marketplace add MarceloCajueiro/claude-plugins
 /plugin install agentic-cr@cajueiro-plugins
 ```
 
