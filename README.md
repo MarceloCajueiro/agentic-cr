@@ -47,8 +47,8 @@ Findings flagged by **both** reviewers are marked as such, which is itself a str
 ## Install
 
 ```
-/plugin marketplace add MarceloCajueiro/agentic-cr
-/plugin install agentic-cr@cajueiro-cr
+/plugin marketplace add MarceloCajueiro/cajueiro-claude-plugins
+/plugin install agentic-cr@cajueiro-plugins
 ```
 
 The commands stay short: `/cr`, `/cr-1`, `/cr-2`, `/cr-consolidate`.
