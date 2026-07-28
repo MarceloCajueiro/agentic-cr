@@ -1,6 +1,6 @@
 {
   "name": "agentic-cr",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agentic code review pipeline for GitHub PRs — two independent review passes in parallel, consolidated into one deduplicated PR comment, followed by a finding-by-finding fix pass.",
   "author": { "name": "Marcelo Cajueiro" },
   "homepage": "https://cajueiro.tech",
