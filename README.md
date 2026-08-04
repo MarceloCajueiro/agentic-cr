@@ -88,6 +88,8 @@ PR ──►  │            (parallel, isolated agents) ├──► cr-consoli
 
 Human review proceeds as usual afterwards — the pipeline raises the floor, it doesn't replace people.
 
+**Phases 1 and 2 never touch your working tree.** The review agents stay on the branch you are already on and write only their report files: no checkout, no new branch, no stash or reset. That matters because the underlying skills will otherwise offer to apply fixes mid-review — which makes the second pass review a diff the first one never saw — and because `pr-review-toolkit` has been observed rolling the tree back and moving the session onto a branch of its own, silently stranding later commits off the PR. Each phase ends by checking the branch, the SHA and a clean tree against what they were at the start.
+
 ### Severity scheme
 
 | Severity | Meaning |

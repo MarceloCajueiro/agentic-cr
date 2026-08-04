@@ -28,12 +28,20 @@ OUT_DIR="/tmp/cr/$REPO_SLUG"
 
 Precondition: **clean working tree** (`git status --porcelain` empty). Nothing uncommitted may enter phase 1.
 
+**Record the branch and SHA before spawning** — these are what you check against at the end of each phase:
+
+```bash
+git rev-parse --abbrev-ref HEAD && git rev-parse HEAD
+```
+
+You are normally already on the PR branch. In that case the agents **stay on it**: the diff is on disk (`git diff origin/<default-branch>...HEAD`) and there is nothing to check out.
+
 Both in **isolated agents** (clean context, via the `Agent` tool), in the **same block of tool calls**:
 
 | Agent | Prompt |
 |---|---|
-| cr-1 | `Invoke the Skill "cr-1" (listed as "agentic-cr:cr-1" when installed as a plugin) with args "<PR_NUM>". Follow the skill to the letter and return only the path of the generated file. Do NOT edit, commit or push any repository file — if the skill offers to apply fixes, decline. Your only permitted write is the review output file.` |
-| cr-2 | `Invoke the Skill "cr-2" (listed as "agentic-cr:cr-2" when installed as a plugin) with args "<PR_NUM>". Follow the skill to the letter and return only the path of the generated file. Do NOT edit, commit or push any repository file — if the skill offers to apply fixes, decline. Your only permitted write is the review output file.` |
+| cr-1 | `Invoke the Skill "cr-1" (listed as "agentic-cr:cr-1" when installed as a plugin) with args "<PR_NUM>". Follow the skill to the letter and return only the path of the generated file. You are ALREADY on the PR branch: do NOT check out, do NOT create a branch, do NOT run stash/reset/clean, do NOT edit, commit or push any repository file — if the skill offers to apply fixes, decline. Your only permitted write is the review output file.` |
+| cr-2 | `Invoke the Skill "cr-2" (listed as "agentic-cr:cr-2" when installed as a plugin) with args "<PR_NUM>". Follow the skill to the letter and return only the path of the generated file. You are ALREADY on the PR branch: do NOT check out, do NOT create a branch, do NOT run stash/reset/clean, do NOT edit, commit or push any repository file — if the skill offers to apply fixes, decline. Your only permitted write is the review output file.` |
 
 ## Phase 2 — Consolidation
 
@@ -47,7 +55,22 @@ Third isolated agent:
 |---|---|
 | cr-consolidate | `Invoke the Skill "cr-consolidate" (listed as "agentic-cr:cr-consolidate" when installed as a plugin) with args "<PR_NUM>". Return the body of the posted comment. Do NOT edit code: your output is the comment on the PR.` |
 
-Close the phase by confirming: `git status --porcelain` is still empty and the PR head has not moved since the start of phase 1.
+Close the phase by confirming **branch, SHA and tree**:
+
+```bash
+git status -sb | head -1   # must be the branch recorded in phase 1
+git rev-parse HEAD         # must be the same SHA
+git status --porcelain     # must still be empty
+```
+
+If the branch moved, the agents took you with them (`pr-review-toolkit` creates a `<pr-branch>-cr2` and leaves the session there). Go back before phase 3, or the fix-pass commits land on the agent's branch:
+
+```bash
+git checkout <PR branch>
+git merge --ff-only <agent branch>   # only if a commit of yours is stuck there
+```
+
+**Don't trust the `git push` message:** sitting on the wrong branch, it answers "Everything up-to-date" while the PR stays without the commits. Check the remote SHA with `gh pr view <PR_NUM> --json headRefOid -q .headRefOid`.
 
 ## Phase 3 — Fix pass (inline, this session)
 
@@ -58,6 +81,12 @@ Read the consolidated comment and decide **finding by finding**. Don't apply in 
 - **CRITICAL / HIGH:** apply, unless proven false positive. Every fix gets (or reuses) a test.
 - **MEDIUM / LOW:** apply when the cost is low and the gain is real. Decline when it's out of scope, speculative, or over-engineering — and say why.
 - Run the project's test suite after the fixes (find the command in the repo's CLAUDE.md, README, Makefile, package.json, etc.). Separate commit(s): `fix: apply code review findings from PR #<PR_NUM> (<short summary>)` — follow the repository's commit conventions, including language. Push to the PR branch.
+- **Confirm the push landed** — the local head and the PR head must match. "Everything up-to-date" is also what you get when you have been committing on the wrong branch:
+
+  ```bash
+  git rev-parse HEAD
+  gh pr view <PR_NUM> --json headRefOid -q .headRefOid
+  ```
 
 Reply **on the PR** (`gh pr comment <PR_NUM> --body-file -`):
 
