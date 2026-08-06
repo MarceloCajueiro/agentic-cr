@@ -3,7 +3,7 @@
 Agentic code review pipeline for GitHub pull requests — **two independent review passes in parallel, one deduplicated comment on the PR, then a finding-by-finding fix pass.**
 
 `/cr` orchestrates [Claude Code](https://docs.claude.com/en/docs/claude-code) review agents against any PR:
-a baseline pass (the built-in `/code-review` skill at max effort) and a specialized pass
+a baseline pass (the built-in `/code-review` skill at high effort) and a specialized pass
 (`pr-review-toolkit`, aspect-picked from the diff) run concurrently in isolated agents; a third agent
 merges both reports, deduplicates findings, classifies severity, and posts a single consolidated
 comment on the PR. Finally, the main session walks the findings one by one — applying what's real
@@ -77,7 +77,7 @@ Each phase is also invocable on its own:
 ## How it works
 
 ```
-        ┌─ cr-1: /code-review xhigh ─────────────┐
+        ┌─ cr-1: /code-review high ─────────────┐
 PR ──►  │            (parallel, isolated agents) ├──► cr-consolidate ──► one PR comment ──► fix pass
         └─ cr-2: /pr-review-toolkit:review-pr ───┘         (dedup + severity)                (inline)
 ```

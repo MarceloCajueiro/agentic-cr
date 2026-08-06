@@ -1,6 +1,6 @@
 ---
 name: cr-1
-description: Baseline code review pass — runs the built-in /code-review skill at xhigh effort against a PR and saves the literal output to /tmp/cr/<repo>/cr_1_<PR>.md. First half of the /cr pipeline; also usable standalone.
+description: Baseline code review pass — runs the built-in /code-review skill at high effort against a PR and saves the literal output to /tmp/cr/<repo>/cr_1_<PR>.md. First half of the /cr pipeline; also usable standalone.
 argument-hint: <PR-number>
 user_invocable: true
 ---
@@ -32,7 +32,7 @@ OUT_DIR="/tmp/cr/$REPO_SLUG"
 mkdir -p "$OUT_DIR"
 ```
 
-Run `/code-review xhigh $PR_NUM` and save the output to `$OUT_DIR/cr_1_$PR_NUM.md`.
+Run `/code-review high $PR_NUM` and save the output to `$OUT_DIR/cr_1_$PR_NUM.md`.
 
 **Saved file format** (header + literal skill output):
 
@@ -43,7 +43,7 @@ Run `/code-review xhigh $PR_NUM` and save the output to `$OUT_DIR/cr_1_$PR_NUM.m
 **SHA:** <PR head SHA>
 **Branch:** <PR head branch>
 **Timestamp:** <UTC ISO 8601>
-**Skill:** /code-review xhigh
+**Skill:** /code-review high
 
 ---
 
