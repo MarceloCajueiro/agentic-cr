@@ -16,7 +16,7 @@ OUT_DIR="/tmp/cr/$REPO_SLUG"
 
 **Context:** `$OUT_DIR/cr_1_$PR_NUM.md` and `$OUT_DIR/cr_2_$PR_NUM.md` contain code review findings from two distinct agents. Each file starts with a standardized header (PR/SHA/Branch/Timestamp/Skill or Aspects run) followed by the literal skill output.
 
-- `cr_1`: built-in `/code-review xhigh` skill (parallel fan-out of review agents: guideline compliance, bug scan, git blame/history, previous PRs, code comments)
+- `cr_1`: built-in `/code-review high` skill (parallel fan-out of review agents: guideline compliance, bug scan, git blame/history, previous PRs, code comments)
 - `cr_2`: `/pr-review-toolkit:review-pr` plugin (specialized agents per aspect: errors, tests, types, comments, code, simplify)
 
 **Your task:** read both files, deduplicate findings, categorize by severity and post ONE consolidated comment on the PR via `gh pr comment $PR_NUM --body-file -` (pass the body via heredoc/stdin to avoid problems with backticks in the body).
@@ -28,7 +28,7 @@ OUT_DIR="/tmp/cr/$REPO_SLUG"
 ```markdown
 ## 🔍 Consolidated code review — PR #<PR_NUM>
 
-**Sources:** `/code-review xhigh` + `/pr-review-toolkit:review-pr` (specialized agents per aspect)
+**Sources:** `/code-review high` + `/pr-review-toolkit:review-pr` (specialized agents per aspect)
 
 ### Summary
 
