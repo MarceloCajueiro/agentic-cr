@@ -1,46 +1,82 @@
 # agentic-cr
 
-Agentic code review pipeline for GitHub pull requests — **two independent review passes in parallel, one deduplicated comment on the PR, then a finding-by-finding fix pass.**
+Agentic code review for GitHub pull requests — **the diff decides which lenses run, every lens is read-only, every serious candidate gets refuted before it reaches the author.**
 
-`/cr` orchestrates [Claude Code](https://docs.claude.com/en/docs/claude-code) review agents against any PR:
-a baseline pass (the built-in `/code-review` skill at high effort) and a specialized pass
-(`pr-review-toolkit`, aspect-picked from the diff) run concurrently in isolated agents; a third agent
-merges both reports, deduplicates findings, classifies severity, and posts a single consolidated
-comment on the PR. Finally, the main session walks the findings one by one — applying what's real
-(with tests), declining what isn't (with a reason) — and replies on the PR.
+`/cr` triages the PR diff, fans out a team of specialized [Claude Code](https://docs.claude.com/en/docs/claude-code)
+review agents in parallel, sends every CRITICAL/HIGH and every unproven claim to an adversarial verifier
+that tries to *refute* it, and posts a single scannable comment on the PR — with the confirmed findings,
+the refuted ones (so the next round does not reopen them), and an explicit list of what was **not** verified.
+Then the main session walks the findings one by one, applying what is real and declining what is not.
 
-- 🔀 **Two independent reviewers** — different skills, clean contexts, no anchoring
-- 🧹 **One comment, not four** — findings deduplicated and ranked 🚨 CRITICAL → 💡 LOW
-- 🔒 **Stale-proof** — every report records the PR head SHA; consolidation refuses partial or outdated inputs
-- 🔧 **Fix pass with judgment** — apply or decline finding by finding, never in bulk; every fix gets a test
-- 📦 **Works on any repo** — no project-specific config; `gh` infers the repository from the git remote
+Nothing in it is tied to a language, a framework or a repository: each lens reads the reviewed project's
+own conventions before judging anything.
+
+- 🎯 **Triage before spawn** — a lens with nothing to do on this diff does not run, and the skip is reported
+- 🔬 **Adversarial verify** — findings are attacked before publication: CONFIRMED, REFUTED, PLAUSIBLE or PRE-EXISTING
+- 🚫 **No invented rules** — a citation must come from the reviewed project's own docs, or the finding stands on evidence alone
+- 🔒 **Read-only until the fix pass** — no file changes between the first agent and the posted comment
+- 📢 **Declared coverage** — cut lenses, unmeasurable claims and missing runtimes go under *Verification gaps*
+- 📦 **Any repo** — no project-specific configuration; `gh` infers the repository from the git remote
 
 ---
 
-## Why two reviewers?
+## How it works
 
-The pipeline doesn't invent its own review logic. It takes two well-crafted review agents that
-already ship with Claude Code — the built-in `/code-review` skill and Anthropic's
-`pr-review-toolkit` plugin, **each of which fans out into its own specialized sub-agents** —
-and runs them in parallel, in isolated contexts, as redundant reviewers of the same PR.
+```
+                  ┌─ cr-boundary-guard ──┐
+PR ──► triage ──► ├─ cr-conventions ─────┤ ──► dedup ──► cr-verifier ──► one PR comment ──► fix pass
+       (bucket)   ├─ cr-exec-prober ─────┤   (±3 lines)  (refute each)     (index + gaps)     (inline)
+                  └─ … the lenses the ───┘
+                     diff justifies
+```
 
-The point is redundancy: there are bugs and improvements one reviewer catches and the other
-doesn't. Running both and merging the results has proven very effective in practice — you get
-the union of two independent reviews at the cost of reading a single consolidated comment.
-Findings flagged by **both** reviewers are marked as such, which is itself a strong signal.
+1. **Triage** — the diff is bucketed (docs-only / trivial / surgical / feature), which sets a ceiling on how
+   many finders run, and each lens passes an explicit SPAWN/SKIP gate. Both lists — spawned and not spawned,
+   with the reason — end up in the comment.
+2. **Finder wave** — the triaged lenses run in parallel as isolated read-only agents, orchestrated by the
+   `Workflow` tool (with a plain Agent-tool fan-out as fallback). Each returns structured findings plus what
+   it checked and dismissed.
+3. **Dedup and verify** — findings are grouped by location (same file, ±3 lines). Every group holding a
+   CRITICAL/HIGH, an unproven candidate or a runtime claim goes to `cr-verifier`, whose job is to **refute**
+   it — by execution when the project offers a read-only way to run code.
+4. **Comment** — one comment: an index table, one heading per finding, verification evidence folded into
+   `<details>`, plus *Verification gaps*, *Pre-existing* and *Verified and dismissed*.
+5. **Fix pass** — the main session decides finding by finding: CRITICAL/HIGH applied unless proven false
+   positive (each with a test), MEDIUM/LOW applied when cheap and real, declined with a stated reason
+   otherwise. Suite runs, commits pushed, summary replied on the PR.
+
+---
+
+## The lenses
+
+| Agent | Covers |
+|---|---|
+| `cr-boundary-guard` | The project's declared critical dimension — data isolation, authorization, authentication, schema traps. Falls back to a generic access-control floor when the project declares nothing. |
+| `cr-conventions` | The project's own written conventions, and APIs newer than the pinned runtime and dependencies. Base lens of every code PR. |
+| `cr-exec-prober` | Runs the changed code with read-only probes; audits deleted lines for lost invariants; shell scripts and CI workflows. |
+| `cr-data-layer` | Measured query cost (execution plans, not estimates), migrations, and bulk writes that bypass the model layer. |
+| `cr-test-analyzer` | Coverage gaps and, above all, tests with no power to fail. |
+| `cr-silent-failure-hunter` | Swallowed errors, broad catches, fallbacks that mask problems. |
+| `cr-type-design` | Invariants, encapsulation and enforcement of new types. |
+| `cr-comment-analyzer` | Comment accuracy against the real code; comment rot. |
+| `cr-docs-guard` | Docs that assert what is no longer true; broken paths, links and commands; agent/prompt files that break their own pipeline. |
+| `cr-code-reviewer` | Generalist sweep on feature-sized PRs, filtered at confidence ≥ 80. |
+| `cr-verifier` | Adversarial verification of candidates — the only lens that never finds anything, only judges. |
+
+Five of them (`cr-code-reviewer`, `cr-comment-analyzer`, `cr-silent-failure-hunter`, `cr-test-analyzer`,
+`cr-type-design`) are generalized adaptations of the agents in Anthropic's
+[`pr-review-toolkit`](https://github.com/anthropics/claude-code/tree/main/plugins/pr-review-toolkit) (MIT),
+with the provenance recorded in each file.
 
 ---
 
 ## Requirements
 
-- [Claude Code](https://docs.claude.com/en/docs/claude-code) with the built-in `/code-review` skill
+- [Claude Code](https://docs.claude.com/en/docs/claude-code)
 - [GitHub CLI](https://cli.github.com) (`gh`) authenticated with access to the repo
-- The `pr-review-toolkit` plugin from Anthropic's marketplace:
+- A clean working tree on the PR branch
 
-```
-/plugin marketplace add anthropics/claude-code
-/plugin install pr-review-toolkit@claude-code-plugins
-```
+The `Workflow` tool is used when available; without it the pipeline falls back to a direct Agent-tool fan-out.
 
 ---
 
@@ -50,8 +86,6 @@ Findings flagged by **both** reviewers are marked as such, which is itself a str
 /plugin marketplace add MarceloCajueiro/claude-plugins
 /plugin install agentic-cr@cajueiro-plugins
 ```
-
-The commands stay short: `/cr`, `/cr-1`, `/cr-2`, `/cr-consolidate`.
 
 ---
 
@@ -64,50 +98,52 @@ From a checkout of the repo whose PR you want reviewed:
 /cr 123       # reviews PR #123
 ```
 
-Each phase is also invocable on its own:
-
-```
-/cr-1 123            # baseline review only  → /tmp/cr/<owner>-<repo>/cr_1_123.md
-/cr-2 123            # specialized review only → /tmp/cr/<owner>-<repo>/cr_2_123.md
-/cr-consolidate 123  # merge both files and post the consolidated comment
-```
+The full report is written to `/tmp/cr/<owner>-<repo>/cr_<PR>.md` — the audit artifact, with no verbosity
+limit. The PR gets the readable version.
 
 ---
 
-## How it works
+## Design rules
 
-```
-        ┌─ cr-1: /code-review high ─────────────┐
-PR ──►  │            (parallel, isolated agents) ├──► cr-consolidate ──► one PR comment ──► fix pass
-        └─ cr-2: /pr-review-toolkit:review-pr ───┘         (dedup + severity)                (inline)
-```
+These are the rules the pipeline holds itself to, and the reason it produces fewer false positives than a
+single-pass review:
 
-1. **Parallel reviews** — two isolated agents run the baseline and specialized skills concurrently. Each writes a report with a standardized header (PR, head SHA, branch, timestamp) to `/tmp/cr/<owner>-<repo>/`.
-2. **Consolidation** — a third agent verifies both reports exist and their SHAs match the current PR head (a leftover file from an old run is rejected, never merged). It deduplicates findings (same file, ±3 lines, same problem), maps everything onto one severity scheme, and posts a single comment on the PR.
-3. **Fix pass** — the main session reads the consolidated comment and decides finding by finding: CRITICAL/HIGH are applied unless proven false positives (each fix with a test); MEDIUM/LOW are applied when cheap and real, declined with a stated reason otherwise. The test suite runs, fixes are committed and pushed, and a summary reply is posted on the PR.
-
-Human review proceeds as usual afterwards — the pipeline raises the floor, it doesn't replace people.
-
-**Phases 1 and 2 never touch your working tree.** The review agents stay on the branch you are already on and write only their report files: no checkout, no new branch, no stash or reset. That matters because the underlying skills will otherwise offer to apply fixes mid-review — which makes the second pass review a diff the first one never saw — and because `pr-review-toolkit` has been observed rolling the tree back and moving the session onto a branch of its own, silently stranding later commits off the PR. Each phase ends by checking the branch, the SHA and a clean tree against what they were at the start.
+1. **Review does not edit, the fix pass does not review.** No code changes between the first agent and the
+   posted comment — every agent must see the same diff. A diff that shifts mid-cycle produces phantom
+   findings and a comment pointing at lines that no longer exist.
+2. **A finding requires a citable rule OR executable evidence** — and the rule must be one the reviewed
+   project actually wrote. A fabricated citation is worse than a missed finding.
+3. **A runtime claim only enters CONFIRMED by execution.** Static reading describes the path as written.
+4. **Partial coverage is declared, never silent.** A cut lens, an unmeasurable cost, an undiscoverable test
+   command — all of it goes under *Verification gaps* in the comment.
+5. **A lens with nothing to do does not run.** An idle agent costs the same wall-clock as a working one and
+   returns noise.
 
 ### Severity scheme
 
 | Severity | Meaning |
 |---|---|
-| 🚨 CRITICAL | Production/security/data-integrity bug — injection, auth bypass, data leak, data loss, destructive migration |
-| ⚠️ HIGH | High incident probability — N+1 on a hot path, race condition, unhandled error, missing tests for new logic |
+| 🚨 CRITICAL | Production, security or data-integrity bug — injection, auth bypass, data leak across a boundary, data loss, destructive migration |
+| ⚠️ HIGH | High incident probability — query in a loop on a hot path, race condition, unhandled error, missing tests for new logic |
 | 📝 MEDIUM | Quality issue that becomes tech debt — refactor suggestions, oversized functions, context-free logging |
 | 💡 LOW | Style and nits |
 
-When in doubt, findings default to MEDIUM — severity inflation is a false positive too.
+### Verdicts
+
+| Verdict | Meaning |
+|---|---|
+| CONFIRMED | The verifier named the input and the wrong output, with proof |
+| PLAUSIBLE | Real mechanism, uncertain trigger — enters with the shortest manual check attached |
+| REFUTED | Constructively disproven — recorded in the comment so the next round does not reopen it |
+| PRE-EXISTING | Real bug, identical on the default branch — flagged as a follow-up, not as a finding of this PR |
 
 ---
 
 ## Notes
 
-- Reports live in `/tmp/cr/<owner>-<repo>/` and are keyed by PR number; the SHA check makes stale files harmless. Delete the directory to force a clean slate.
 - Comments are written in English by default; if a repo's PRs are predominantly in another language, the pipeline follows suit.
-- A full run spawns several review agents — expect it to take a few minutes and consume a corresponding amount of tokens.
+- A full run spawns several review agents — expect a few minutes and a corresponding token cost. The bucket ceiling is what keeps it bounded.
+- Version 2.0.0 replaced the previous architecture (two outsourced review passes, `/cr-1`, `/cr-2`, `/cr-consolidate`) with this lens team. Those commands no longer exist; `/cr` is the whole pipeline.
 
 ---
 
