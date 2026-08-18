@@ -6,7 +6,8 @@ Agentic code review for GitHub pull requests — **the diff decides which lenses
 review agents in parallel, sends every CRITICAL/HIGH and every unproven claim to an adversarial verifier
 that tries to *refute* it, and posts a single scannable comment on the PR — with the confirmed findings,
 the refuted ones (so the next round does not reopen them), and an explicit list of what was **not** verified.
-Then the main session walks the findings one by one, applying what is real and declining what is not.
+It stops there: applying the findings is the PR owner's call. Run `/cr --fix` to have the main session walk
+them one by one, applying what is real and declining what is not.
 
 Nothing in it is tied to a language, a framework or a repository: each lens reads the reviewed project's
 own conventions before judging anything.
@@ -14,7 +15,7 @@ own conventions before judging anything.
 - 🎯 **Triage before spawn** — a lens with nothing to do on this diff does not run, and the skip is reported
 - 🔬 **Adversarial verify** — findings are attacked before publication: CONFIRMED, REFUTED, PLAUSIBLE or PRE_EXISTING
 - 🚫 **No invented rules** — a citation must come from the reviewed project's own docs, or the finding stands on evidence alone
-- 🔒 **Read-only until the fix pass** — no file changes between the first agent and the posted comment
+- 🔒 **Read-only by default** — nothing is edited, committed or pushed unless you pass `--fix`
 - 📢 **Declared coverage** — cut lenses, unmeasurable claims and missing runtimes go under *Verification gaps*
 - 📦 **Any repo** — no project-specific configuration; `gh` infers the repository from the git remote
 
@@ -24,8 +25,8 @@ own conventions before judging anything.
 
 ```
                   ┌─ cr-boundary-guard ──┐
-PR ──► triage ──► ├─ cr-conventions ─────┤ ──► dedup ──► cr-verifier ──► one PR comment ──► fix pass
-       (bucket)   ├─ cr-exec-prober ─────┤   (±3 lines)  (refute each)     (index + gaps)     (inline)
+PR ──► triage ──► ├─ cr-conventions ─────┤ ──► dedup ──► cr-verifier ──► one PR comment ─┤─► fix pass
+       (bucket)   ├─ cr-exec-prober ─────┤   (±3 lines)  (refute each)     (index + gaps) │   (--fix only)
                   └─ … the lenses the ───┘
                      diff justifies
 ```
@@ -41,9 +42,10 @@ PR ──► triage ──► ├─ cr-conventions ─────┤ ──►
    it — by execution when the project offers a read-only way to run code.
 4. **Comment** — one comment: an index table, one heading per finding, verification evidence folded into
    `<details>`, plus *Verification gaps*, *Pre-existing* and *Verified and dismissed*.
-5. **Fix pass** — the main session decides finding by finding: CRITICAL/HIGH applied unless proven false
-   positive (each with a test), MEDIUM/LOW applied when cheap and real, declined with a stated reason
-   otherwise. Suite runs, commits pushed, summary replied on the PR.
+5. **Fix pass — only with `--fix`** — without the flag the pipeline stops at the comment and the fixes are
+   the PR owner's call. With it, the main session decides finding by finding: CRITICAL/HIGH applied unless
+   proven false positive (each with a test), MEDIUM/LOW applied when cheap and real, declined with a stated
+   reason otherwise. Suite runs, commits pushed, summary replied on the PR.
 
 ---
 
@@ -96,7 +98,12 @@ From a checkout of the repo whose PR you want reviewed:
 ```
 /cr           # reviews the PR of the current branch
 /cr 123       # reviews PR #123
+/cr --fix     # reviews, then applies the findings and pushes
+/cr 123 --fix # same, on PR #123
 ```
+
+**Review only by default.** Without `--fix` the pipeline never edits, commits or pushes — it posts the
+comment and stops. Applying the findings is the PR owner's decision; `--fix` is how they delegate it.
 
 The full report is written to `/tmp/cr/<owner>-<repo>/cr_<PR>.md` — the audit artifact, with no verbosity
 limit. The PR gets the readable version.

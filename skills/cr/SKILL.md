@@ -1,19 +1,24 @@
 ---
 name: cr
-description: Agentic code review pipeline for a GitHub PR — triages the diff to decide which review lenses run, fans them out in parallel as read-only finder agents, refutes their candidates with an adversarial verifier, posts one consolidated comment on the PR, then runs a finding-by-finding fix pass. Use when the user wants a PR reviewed end to end, says "/cr", "review this PR", or "run the code review pipeline".
-argument-hint: "[PR-number] (default: PR of the current branch)"
+description: Agentic code review pipeline for a GitHub PR — triages the diff to decide which review lenses run, fans them out in parallel as read-only finder agents, refutes their candidates with an adversarial verifier, and posts one consolidated comment on the PR. Read-only by default; with --fix it also runs a finding-by-finding fix pass. Use when the user wants a PR reviewed end to end, says "/cr", "review this PR", or "run the code review pipeline".
+argument-hint: "[PR-number] [--fix] (default: PR of the current branch, review only)"
 user_invocable: true
 ---
 
 # /cr — agentic code review
 
-`$ARGUMENTS` is the PR number. If empty, resolve it from the current branch:
+`$ARGUMENTS` holds the PR number and/or the `--fix` flag, in any order — `/cr`, `/cr 123`,
+`/cr --fix`, `/cr 123 --fix` are all valid. Strip the flag before resolving the number:
 
 ```bash
-PR_NUM="${ARGUMENTS:-$(gh pr view --json number -q .number)}"
+FIX=0; case " $ARGUMENTS " in *" --fix "*) FIX=1;; esac
+PR_ARG="$(printf '%s' "$ARGUMENTS" | sed 's/--fix//g' | tr -d '[:space:]')"
+PR_NUM="${PR_ARG:-$(gh pr view --json number -q .number)}"
 ```
 
 No PR for the branch: stop and tell the user.
+
+**`--fix` is the only thing that authorizes phase 5.** Without it this command reviews and comments; it never edits, commits or pushes. Carry `FIX` to the end — phase 5 checks it.
 
 Everything runs against the repository of the current working directory — `gh` infers it from the git remote, so **never pass `-R`**. Resolve the default branch once and use it everywhere a base is needed:
 
@@ -385,7 +390,9 @@ git status -sb | head -1 && git rev-parse HEAD && git status --porcelain
 
 A different branch or SHA means an agent moved you — go back (`git checkout <PR branch>`). A dirty tree means an agent wrote to the repository despite its instructions — revert it and record it under *Provenance notes*. Do not trust `git push` here either: on the wrong branch it answers "Everything up-to-date" while the PR stays behind.
 
-## Phase 5 — Fix pass (inline, this session)
+## Phase 5 — Fix pass (inline, this session) — ONLY with `--fix`
+
+**This phase runs only when the invocation carried `--fix`.** Without it the pipeline ends at phase 4: the comment is posted, nothing is edited, nothing is committed, nothing is pushed, and you report to the user that the review is done and the fixes are the PR owner's call. Do not offer to apply them anyway — the whole point of the flag is that touching someone's branch is their decision, not yours. `/cr --fix` is how they make it.
 
 **The only point in the cycle where code changes.** Only with the comment already posted. Decide **finding by finding** — do not apply in bulk, do not dismiss in bulk:
 
