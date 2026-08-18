@@ -1,10 +1,10 @@
 {
   "name": "agentic-cr",
-  "version": "1.0.2",
-  "description": "Agentic code review pipeline for GitHub PRs — two independent review passes in parallel, consolidated into one deduplicated PR comment, followed by a finding-by-finding fix pass.",
+  "version": "2.0.0",
+  "description": "Agentic code review for GitHub PRs — triages the diff to pick review lenses, fans them out as read-only finder agents, refutes their candidates with an adversarial verifier, and posts one consolidated comment. Read-only by default; --fix also runs a finding-by-finding fix pass. Language- and project-agnostic.",
   "author": { "name": "Marcelo Cajueiro" },
   "homepage": "https://cajueiro.tech",
   "repository": "https://github.com/MarceloCajueiro/agentic-cr",
   "license": "MIT",
-  "keywords": ["code-review", "pull-request", "github", "agentic", "claude-code", "automation"]
+  "keywords": ["code-review", "pull-request", "github", "agentic", "claude-code", "automation", "subagents"]
 }
