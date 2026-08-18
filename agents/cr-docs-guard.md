@@ -27,4 +27,6 @@ Each finding: `file:line` — severity (CRITICAL/HIGH/MEDIUM/LOW) — short titl
 
 Never cite a rule the project has not written; with neither evidence nor a citable project rule, the finding does not enter.
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Close with `## Verified and dismissed`: claims you checked that hold, paths that exist — so silence is not mistaken for a lack of verification.

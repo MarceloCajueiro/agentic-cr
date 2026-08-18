@@ -45,4 +45,6 @@ Each finding: `file:line` — severity (CRITICAL/HIGH/MEDIUM/LOW) — short titl
 
 Never cite a rule the project has not written; with neither a citable project rule nor evidence, the finding **does not enter**. A cost finding with no execution plan cited is PLAUSIBLE at most — say why measuring was not possible. Do not flag code the diff does not touch.
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Close with `## Verified and dismissed`: what you measured that did not become a finding, with the reason.

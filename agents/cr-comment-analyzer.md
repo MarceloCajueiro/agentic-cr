@@ -43,6 +43,8 @@ Open with a brief summary of scope (how many new or modified comments, in which 
 
 With neither a citable project rule nor evidence, the finding **does not enter**. Severity guide: a factually wrong comment that induces a wrong decision (HIGH, CRITICAL when it touches security or data integrity); a violation of a written project convention (MEDIUM); a redundant or noisy comment (LOW).
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Well-written comments worth holding up as examples can be cited briefly.
 
 Close with `## Verified and dismissed`: comments you checked that did not become findings, with the reason (for example: "the comment at X:12 looks like change narration but states a schema invariant that still holds").

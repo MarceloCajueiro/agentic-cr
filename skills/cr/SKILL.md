@@ -10,7 +10,7 @@ user_invocable: true
 `$ARGUMENTS` is the PR number. If empty, resolve it from the current branch:
 
 ```bash
-gh pr view --json number -q .number
+PR_NUM="${ARGUMENTS:-$(gh pr view --json number -q .number)}"
 ```
 
 No PR for the branch: stop and tell the user.
@@ -280,7 +280,7 @@ Workflow runs in the **background**: it returns a task ID immediately and the re
 The script already did the grouping and the verify; what is left is your judgment:
 
 1. **An exact duplicate** (same problem, same core verb + object) inside a group becomes ONE entry with `**Detected by:** <agents>` — two independent lenses landing on the same point is a confirmation signal, record it.
-2. **MEDIUM/LOW findings backed by a cited rule** never went through a verifier (the script does not send them): check those yourself inline — does the citation exist, is it from the reviewed project's own documents, and does it apply to that line? Keep it if so, cut it if not.
+2. **MEDIUM/LOW findings that are neither candidates nor runtime claims, and are not grouped with a CRITICAL/HIGH**, never reached a verifier (the script does not send them): check those yourself inline — does the citation exist, is it from the reviewed project's own documents, and does it apply to that line? Keep it if so, cut it if not.
 3. Apply the verdicts: **REFUTED** drops out (into *Verified and dismissed*, including refutations with preventive value — they stop the next round from reopening them); **CONFIRMED** enters with its evidence; **PLAUSIBLE** enters marked, with the manual check attached; **PRE_EXISTING** goes to its own section. **A candidate with no verdict** (`dead_agents`, or a verifier that died) **drops** with a provenance note — it never enters as a fabricated PLAUSIBLE.
 
 ## Phase 4 — Report and comment

@@ -60,6 +60,8 @@ Each finding: `file:line` — severity (CRITICAL/HIGH/MEDIUM/LOW) — short titl
 
 With neither a citable project rule nor evidence, the finding **does not enter**. Severity guide: a real silent failure or a broad catch that swallows a bug (CRITICAL); a bad message or unjustified fallback (HIGH); missing log context or a catch that could be narrower (MEDIUM); a minor improvement (LOW).
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Acknowledge well-done error handling where it exists — rare, but worth recording.
 
 Close with `## Verified and dismissed`: what you checked that did not become a finding, with the reason — including any broad handler you dismissed as deliberate, and why.

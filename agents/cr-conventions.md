@@ -47,4 +47,6 @@ Each finding: `file:line` — severity (CRITICAL/HIGH/MEDIUM/LOW) — short titl
 
 With neither a citable project rule nor evidence, the finding **does not enter**. Do not report style a configured linter already enforces, speculation, or code the diff does not touch.
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Close with `## Verified and dismissed`: what you checked that did not become a finding, with the reason.

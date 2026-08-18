@@ -52,4 +52,6 @@ Open by listing what you reviewed (PR, files, scope). Each finding: `file:line` 
 
 With neither a citable project rule nor evidence, the finding **does not enter** the report.
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set — this also overrides the confidence ≥ 80 floor above. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Close with `## Verified and dismissed`: what you checked that did not become a finding, with the reason.

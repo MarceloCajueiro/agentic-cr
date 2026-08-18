@@ -68,6 +68,8 @@ Open with a brief summary of coverage quality, then the findings. Each finding: 
 
 With neither a citable project rule nor evidence, the finding **does not enter**. Map the 1-10 scale onto severity: 9-10 → CRITICAL, 7-8 → HIGH, 5-6 → MEDIUM, ≤4 → LOW.
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Include positive observations (what is well tested) where they exist.
 
 Close with `## Verified and dismissed`: what you checked that did not become a finding, with the reason (for example: "the error branch in X is covered by the integration test in Y").

@@ -74,4 +74,6 @@ Then the concrete findings. Each finding: `file:line` — severity (CRITICAL/HIG
 
 With neither a citable project rule nor evidence, the finding **does not enter**. Severity guide: an invariant of the project's critical dimension made violable (CRITICAL); an invalid instance constructible through a normal path (HIGH); inconsistent enforcement or loose encapsulation (MEDIUM); an expressiveness improvement (LOW).
 
+**Exception — the candidate escape.** A bug candidate with a nameable failure scenario (a visible consequence: an error, wrong output, lost data) DOES enter even without complete proof, marked `[CANDIDATE]` with the `candidate` field set. An independent verifier judges it next; the citable-rule-or-evidence bar governs the pipeline's final report, not your candidate list. Do not silently drop the half-believed.
+
 Close with `## Verified and dismissed`: types and points you checked that did not become findings, with the reason.

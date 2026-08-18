@@ -12,7 +12,7 @@ Nothing in it is tied to a language, a framework or a repository: each lens read
 own conventions before judging anything.
 
 - 🎯 **Triage before spawn** — a lens with nothing to do on this diff does not run, and the skip is reported
-- 🔬 **Adversarial verify** — findings are attacked before publication: CONFIRMED, REFUTED, PLAUSIBLE or PRE-EXISTING
+- 🔬 **Adversarial verify** — findings are attacked before publication: CONFIRMED, REFUTED, PLAUSIBLE or PRE_EXISTING
 - 🚫 **No invented rules** — a citation must come from the reviewed project's own docs, or the finding stands on evidence alone
 - 🔒 **Read-only until the fix pass** — no file changes between the first agent and the posted comment
 - 📢 **Declared coverage** — cut lenses, unmeasurable claims and missing runtimes go under *Verification gaps*
@@ -135,7 +135,7 @@ single-pass review:
 | CONFIRMED | The verifier named the input and the wrong output, with proof |
 | PLAUSIBLE | Real mechanism, uncertain trigger — enters with the shortest manual check attached |
 | REFUTED | Constructively disproven — recorded in the comment so the next round does not reopen it |
-| PRE-EXISTING | Real bug, identical on the default branch — flagged as a follow-up, not as a finding of this PR |
+| PRE_EXISTING | Real bug, identical on the default branch — flagged as a follow-up, not as a finding of this PR |
 
 ---
 
