@@ -18,6 +18,7 @@ own conventions before judging anything.
 - 🔒 **Read-only by default** — nothing is edited, committed or pushed unless you pass `--fix`
 - 📢 **Declared coverage** — cut lenses, unmeasurable claims and missing runtimes go under *Verification gaps*
 - 📦 **Any repo** — no project-specific configuration; `gh` infers the repository from the git remote
+- 🧩 **Two architectures** — `/cr` fans the lenses out in parallel; [`/cr-single`](#cr-single--the-same-review-in-one-agent) runs the same lenses sequentially in one agent
 
 ---
 
@@ -78,7 +79,8 @@ with the provenance recorded in each file.
 - [GitHub CLI](https://cli.github.com) (`gh`) authenticated with access to the repo
 - A clean working tree on the PR branch
 
-The `Workflow` tool is used when available; without it the pipeline falls back to a direct Agent-tool fan-out.
+`/cr` uses the `Workflow` tool when available; without it the pipeline falls back to a direct Agent-tool
+fan-out. `/cr-single` needs neither — it never spawns an agent.
 
 ---
 
@@ -107,6 +109,36 @@ comment and stops. Applying the findings is the PR owner's decision; `--fix` is 
 
 The full report is written to `/tmp/cr/<owner>-<repo>/cr_<PR>.md` — the audit artifact, with no verbosity
 limit. The PR gets the readable version.
+
+---
+
+## `/cr-single` — the same review in one agent
+
+`/cr-single` is a second entry point with the same triage, the same lenses, the same severities, verdicts
+and comment format — but **no subagents and no `Workflow`**: every pass runs sequentially in your own
+session. Same flags (`/cr-single`, `/cr-single 123`, `/cr-single --fix`).
+
+It exists because the fan-out costs something too: each finder reboots the project's runtime, rereads the
+diff from scratch, and pays a response-transport budget (the "8 findings / 6 lines" cap exists because an
+over-long subagent answer dies in delivery). A dead agent becomes a provenance note. The single-agent bet
+is that one context removes all of that — **provided the losses are compensated structurally**:
+
+| What multi-agent gives for free | How `/cr-single` replaces it |
+|---|---|
+| An independent verifier | Refutation **by execution**: a mandatory *Refutation attempt* field per finding; no CONFIRMED without a probe whose output decides |
+| A second lens catching what the first dropped | `[CANDIDATE]` posture — liberal in the find, rigorous only in the verify |
+| Isolated read-only agents | Read-only as **discipline**: writes allowed only under `/tmp/cr/...` and the scratchpad, checked against `git status` at the close |
+| Context that cannot be summarized away | A **disk ledger** appended the moment a finding is born; the comment is assembled from the file, never from memory |
+
+What it gains: one runtime boot answers every lens's probes (a *probe checkpoint* phase), one careful
+reading of the diff feeds all the passes (a *diff map* phase, which is also where the deletion audit
+happens), the sweep runs before the verify instead of requiring an extra verifier round, and no transport
+budget — findings are recorded in full.
+
+The two skills write to different paths (`cr_single_<PR>.md`) and the comment identifies which one produced
+it, so **running both on the same PR** — the comparison scenario — does not collide. The bucket table, the
+gates and the cut order are duplicated verbatim between them on purpose: a recalibration must be applied to
+both files.
 
 ---
 
@@ -150,6 +182,7 @@ single-pass review:
 
 - Comments are written in English by default; if a repo's PRs are predominantly in another language, the pipeline follows suit.
 - A full run spawns several review agents — expect a few minutes and a corresponding token cost. The bucket ceiling is what keeps it bounded.
+- Version 2.1.0 added `/cr-single`. It is additive: `/cr` is unchanged, and the two coexist so the architectures can be compared on the same PR.
 - Version 2.0.0 replaced the previous architecture (two outsourced review passes, `/cr-1`, `/cr-2`, `/cr-consolidate`) with this lens team. Those commands no longer exist; `/cr` is the whole pipeline.
 
 ---
