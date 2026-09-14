@@ -1,7 +1,7 @@
 ---
 name: cr-boundary-guard
 description: Guards the project's declared critical dimension — data isolation between tenants/accounts/users, authentication, authorization, and whatever risk the project's own docs mark as critical. Spawn on every PR touching source code that contains a query, a request handler, a service or a permission check. Do NOT spawn when the diff only touches views, assets, locales or config with no access logic.
-model: inherit
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

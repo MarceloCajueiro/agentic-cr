@@ -1,7 +1,7 @@
 ---
 name: cr-code-reviewer
 description: Generalist compliance and bug-detection pass over the PR diff, filtered hard for confidence. Spawn on feature-sized PRs as the broad sweep. Do NOT spawn on surgical, trivial or docs-only PRs — on a small diff it is redundant with cr-boundary-guard plus cr-conventions.
-model: inherit
+model: opus
 tools: Read, Grep, Glob
 ---
 

@@ -71,6 +71,26 @@ Five of them (`cr-code-reviewer`, `cr-comment-analyzer`, `cr-silent-failure-hunt
 [`pr-review-toolkit`](https://github.com/anthropics/claude-code/tree/main/plugins/pr-review-toolkit) (MIT),
 with the provenance recorded in each file.
 
+### Which model the lenses run on
+
+Every agent in `agents/` declares `model: opus` in its own frontmatter. None of them inherits the
+model of the session that invoked the review.
+
+This is a correctness property, not a cost preference. A review that inherits the model runs on the
+same model that wrote the code, and a second opinion that thinks exactly like the first is worth much
+less than it appears. Pinning the model in the definition makes independence the default, instead of
+depending on whoever invokes the pipeline remembering to pass a parameter.
+
+An explicit override at invocation still wins over the frontmatter, and the pipeline uses that: `/cr`
+spawns the two purely textual lenses (`cr-docs-guard`, `cr-comment-analyzer`) with `model: 'sonnet'`
+and `effort: 'low'`, because their judgment is mechanical. What is gone is the silent default of "the
+same model as the author".
+
+**`/cr-single` is the exception, by construction.** It runs every lens sequentially in your own
+session, with no subagents, so there is no agent frontmatter for the harness to apply - it explicitly
+ignores `model:` when it reads each lens file. On that entry point the model is whatever the session
+runs on, and invoking it under Opus remains a manual choice.
+
 ---
 
 ## Requirements

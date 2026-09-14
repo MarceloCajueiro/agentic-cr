@@ -98,7 +98,8 @@ The SKIP predicate binds as hard as the SPAWN one: if SKIP matches, the lens **d
 **Cost and latency per lens** — the wave ends when the slowest agent ends, so the mix matters more than the count:
 
 - The expensive lenses are the ones that boot the project's runtime (`cr-exec-prober`, `cr-data-layer`, `cr-verifier`). Their prompts already tell them to group every check into a single boot; a project with a slow boot pays that cost once per agent.
-- Purely textual lenses (`cr-docs-guard`, `cr-comment-analyzer`) run with `model: 'sonnet'` and `effort: 'low'` — their judgment is mechanical.
+- Every lens declares `model: opus` in its own frontmatter and does **not** inherit the invoking session's model: a review that runs on the same model that wrote the code is a weaker second opinion. You do not need to pass `model` to get that — it is the default.
+- The `model` in `FINDERS` below is an explicit override, which still wins over the frontmatter. Only two lenses use it: the purely textual ones (`cr-docs-guard`, `cr-comment-analyzer`) run with `model: 'sonnet'` and `effort: 'low'`, because their judgment is mechanical. Leave `model` out for every other lens.
 
 **Record the triage** (it goes in the comment) as two lists: **spawned** (agent + the trigger, one line each) **and not spawned** (agent + the SKIP that matched, one line each). Silence about what did not run is indistinguishable from forgetting.
 

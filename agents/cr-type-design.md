@@ -1,7 +1,7 @@
 ---
 name: cr-type-design
 description: Evaluates the design of new types introduced by the PR — invariants, encapsulation and enforcement (construction-time validation, unprotected mutation points). Spawn when the diff creates a new class, struct, record, model or value object WITH STATE OF ITS OWN. Do NOT spawn when the new type is a stateless procedural service, a thin job wrapper or a test helper — there is no invariant to protect.
-model: inherit
+model: opus
 tools: Read, Grep, Glob
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: cr-docs-guard
 description: Documentation lens — catches docs that assert what is no longer true, broken paths and links, commands that do not run as written, and agent/prompt files that break their own pipeline. Spawn when the diff touches Markdown, a docs directory, or agent/skill/prompt definitions.
-model: inherit
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

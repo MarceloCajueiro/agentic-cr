@@ -155,6 +155,8 @@ In the multi-agent pipeline each finder reread the diff from scratch; here you r
 
 For each active lens, **read `$LENS_DIR/<lens>.md` in full and apply its body as a checklist over the diff map** — including its own "Step 1", which is almost always "read what this project actually wrote before judging anything"; do it once and reuse the answer across the passes. Ignore only: the frontmatter (`tools:`, `model:`, the spawn-oriented description) and the **Report format** section, which the ledger replaces. **Do not distill or paraphrase the rules from memory** — the lens file is the source; if it changed, your pass changes with it.
 
+> **The one thing `/cr-single` cannot inherit: the lens's own model.** Each lens file declares `model: opus` precisely so the review does not run on the model that wrote the code — but the harness only applies that when it *spawns* the agent, and here nothing is spawned. Every pass runs on whatever model this session runs on. `/cr` gets an independent reviewer by default; on `/cr-single`, invoking it under Opus stays a manual choice.
+
 Suggested order (textual first, execution last — probe questions accumulate for the batch):
 
 1. `cr-docs-guard`, `cr-comment-analyzer` — mechanical judgment, fast

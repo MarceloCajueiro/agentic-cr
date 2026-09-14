@@ -1,7 +1,7 @@
 ---
 name: cr-silent-failure-hunter
 description: Hunts silent failures in the PR diff — empty or overly broad catch blocks, fallbacks that mask errors, exceptions swallowed with no log and no user feedback. Spawn when the diff ADDS error handling (catch/rescue/except/recover, retry, fallback) or touches an external integration (HTTP, storage, queue, third-party API). Do NOT spawn when the diff's error handling is pre-existing and was only moved or reindented.
-model: inherit
+model: opus
 tools: Read, Grep, Glob
 ---
 

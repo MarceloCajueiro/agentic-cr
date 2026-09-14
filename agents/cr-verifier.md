@@ -1,7 +1,7 @@
 ---
 name: cr-verifier
 description: Adversarial verifier of the agentic code review — receives candidate findings and tries to refute them, by execution when the project offers a read-only way to run code. Spawn one per location group holding a CRITICAL/HIGH finding, an unproven candidate, or an unproven runtime claim.
-model: inherit
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

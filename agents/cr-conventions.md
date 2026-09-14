@@ -1,7 +1,7 @@
 ---
 name: cr-conventions
 description: Base lens of every code PR — checks the diff against the project's own written conventions and against the versions its dependencies are actually pinned to. Spawn on every PR that touches source code; it has no SKIP exception.
-model: inherit
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

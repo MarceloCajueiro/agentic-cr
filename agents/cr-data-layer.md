@@ -1,7 +1,7 @@
 ---
 name: cr-data-layer
 description: Data-layer lens — measured query cost, schema migrations and bulk data writes. Spawn when the diff adds or changes a query (raw SQL, ORM relation, scope, query object, a report that builds a query), touches a migration or schema dump, or writes data in bulk while bypassing the model layer. Do NOT spawn when the query change is only a rename or a column reordering that cannot change the execution plan.
-model: inherit
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

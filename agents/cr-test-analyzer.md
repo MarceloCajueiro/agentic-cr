@@ -1,7 +1,7 @@
 ---
 name: cr-test-analyzer
 description: Analyzes the test coverage and test quality of a PR — critical gaps, uncovered edge cases, and tests with no power to fail. Spawn when the diff adds or changes behavioral logic in application code, with or without tests in the diff. Do NOT spawn when the diff only touches views, assets or docs, or only renames without changing testable behavior.
-model: inherit
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

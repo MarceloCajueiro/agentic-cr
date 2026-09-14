@@ -1,7 +1,7 @@
 ---
 name: cr-comment-analyzer
 description: Analyzes comments and inline documentation added or changed in the PR — factual accuracy against the real code, comment rot, and comments that narrate a change instead of describing the current state. Spawn when the diff adds or changes a comment, a docstring or technical prose. Do NOT spawn when the diff's comments are trivial annotations (linter pragmas, encoding headers). First lens to be cut when the bucket ceiling is tight.
-model: inherit
+model: opus
 tools: Read, Grep, Glob
 ---
 
