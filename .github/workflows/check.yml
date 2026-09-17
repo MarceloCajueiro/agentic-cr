@@ -1,0 +1,32 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  skills:
+    # The job is a few seconds of bash and python3 - the 1 vCPU container runner starts
+    # faster and cheaper than the 4 vCPU VM, and it has everything these steps need
+    # (bash, python3, coreutils, findutils; the scripts deliberately avoid awk/sed/diff).
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # /cr-single reads the lenses from references/lenses/, which are generated from
+      # agents/ because skill installers copy the skill directory and nothing outside it.
+      - name: Lens definitions in sync with agents/
+        run: ./scripts/sync-lenses.sh --check
+
+      - name: Shell scripts parse
+        run: |
+          bash -n scripts/sync-lenses.sh
+          bash -n skills/cr-single/scripts/lens-dir.sh
+
+      - name: Lens resolver finds the bundled copy
+        run: test "$(bash skills/cr-single/scripts/lens-dir.sh)" = "$PWD/skills/cr-single/references/lenses"
+
+      - name: SKILL.md files match the Agent Skills spec
+        run: python3 scripts/check-skills.py
