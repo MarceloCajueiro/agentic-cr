@@ -1,6 +1,8 @@
 ---
 name: cr
-description: Agentic code review pipeline for a GitHub PR — triages the diff to decide which review lenses run, fans them out in parallel as read-only finder agents, refutes their candidates with an adversarial verifier, and posts one consolidated comment on the PR. Read-only by default; with --fix it also runs a finding-by-finding fix pass. Use when the user wants a PR reviewed end to end, says "/cr", "review this PR", or "run the code review pipeline".
+description: Agentic code review pipeline for a GitHub PR - triages the diff to decide which review lenses run, fans them out in parallel as read-only finder agents, refutes their candidates with an adversarial verifier, and posts one consolidated comment on the PR. Read-only by default; with --fix it also runs a finding-by-finding fix pass. Requires a harness with subagent support (Claude Code); on pi, Codex, Cursor or any other harness without a fan-out it hands the run over to the /cr-single skill. Use when the user wants a PR reviewed end to end, says "/cr", "review this PR", or "run the code review pipeline".
+license: MIT
+compatibility: Requires a harness that can spawn subagents (the Workflow tool, or an Agent/Task tool taking an agent type) plus git, bash and an authenticated GitHub CLI (gh). On a harness without subagent support the skill redirects to /cr-single instead of running degraded. Read-only unless --fix is passed.
 argument-hint: "[PR-number] [--fix] (default: PR of the current branch, review only)"
 user_invocable: true
 ---
@@ -16,7 +18,24 @@ PR_ARG="$(printf '%s' "$ARGUMENTS" | sed 's/--fix//g' | tr -d '[:space:]')"
 PR_NUM="${PR_ARG:-$(gh pr view --json number -q .number)}"
 ```
 
+(On a harness that does not substitute `$ARGUMENTS`, read the arguments from the line the harness appends to this skill; pi adds a `User: …` line at the end. It changes nothing else: the harness check below decides whether this pipeline runs at all.)
+
 No PR for the branch: stop and tell the user.
+
+## Harness check - do this before anything else
+
+This pipeline spawns subagents; that is not a detail, it is the architecture. Confirm the session can do it:
+
+- it exposes the **`Workflow`** tool (the preferred fan-out), **or**
+- it exposes an **`Agent`/`Task`-style tool that accepts an agent type** and the `cr-*` agent types are listed in the session (Claude Code, plugin or local checkout).
+
+**If neither is true** (pi, Codex, Cursor, Gemini CLI, or any harness whose subagent support you cannot confirm), **do not run this pipeline solo and do not improvise a fan-out.** Hand the run over with the same arguments:
+
+1. if the session registers skills (pi: `/skill:cr-single`), invoke `cr-single`;
+2. otherwise read `<this skill's directory>/../cr-single/SKILL.md`, which is installed side by side with this skill, and execute it;
+3. if neither is reachable, tell the user to install it: `npx skills add MarceloCajueiro/agentic-cr --skill cr-single`.
+
+Announce the substitution in one line, then continue as `/cr-single`: same triage, same gates, same severities and comment format, single-agent mechanics. Running the fan-out identity without a fan-out is the one failure mode this skill must not have.
 
 **`--fix` is the only thing that authorizes phase 5.** Without it this command reviews and comments; it never edits, commits or pushes. Carry `FIX` to the end — phase 5 checks it.
 
@@ -38,7 +57,7 @@ OUT_DIR="/tmp/cr/$REPO_SLUG"; mkdir -p "$OUT_DIR"
 
 ## Resolving agent names
 
-The lenses ship with this plugin as agent types. Installed as a plugin they are listed as `agentic-cr:cr-verifier`, `agentic-cr:cr-conventions` and so on; running from a local checkout they may be listed under the bare name (`cr-verifier`). **Check the available agent types once at the start** and use whichever form is listed — prefixed first, bare as fallback. Use that same form in every `agentType` below.
+The lenses ship with this plugin as agent types. Installed as a plugin they are listed as `agentic-cr:cr-verifier`, `agentic-cr:cr-conventions` and so on; running from a local checkout they may be listed under the bare name (`cr-verifier`). **Check the available agent types once at the start** and use whichever form is listed — prefixed first, bare as fallback. Use that same form in every `agentType` below. If no `cr-*` type is listed at all, go back to the **Harness check** — this session cannot run the pipeline.
 
 ## Preparation
 
@@ -123,7 +142,7 @@ Applicable convention docs: <root CLAUDE.md/AGENTS.md + the ones covering touche
 
 In the other buckets, **this phase runs through the `Workflow` tool** — invoking it here is part of this command's definition, so the opt-in for multi-agent orchestration is already given; do not ask the user. Why Workflow instead of a manual fan-out: the agents' output stays out of your context, dedup→verify becomes a deterministic pipeline instead of your judgment on every round, and retrying a dead agent is code rather than improvisation.
 
-> **Fallback:** with no `Workflow` tool available in the session, spawn the triaged finders in **a single block of tool calls** through the Agent tool and run dedup/verify by hand under the same rules as phase 3. Same result, different mechanics.
+> **Fallback:** with no `Workflow` tool available in the session, spawn the triaged finders in **a single block of tool calls** through the Agent tool and run dedup/verify by hand under the same rules as phase 3. Same result, different mechanics. With no Agent tool either, the **Harness check** applies — hand the run over to `cr-single` rather than inlining the lenses here.
 
 Build the script from the template below, replacing only the `FINDERS` list (from phase 1) and passing the scope block through `args`:
 
