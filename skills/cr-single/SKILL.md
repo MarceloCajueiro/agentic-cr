@@ -1,19 +1,29 @@
 ---
 name: cr-single
-description: Agentic code review of a GitHub PR in a SINGLE agent — the same lenses as /cr, applied sequentially in this very session, with no subagents and no Workflow. Disk ledger, batched probes, adversarial verification by execution, one consolidated comment. Read-only by default; with --fix it also runs a finding-by-finding fix pass. Use when the user says "/cr-single", asks for a single-agent review, or wants to A/B this architecture against /cr.
+description: Agentic code review of a GitHub PR in a SINGLE agent - the same lenses as /cr, applied sequentially in this very session, with no subagents and no Workflow, so it works in any harness (pi, Claude Code, Codex, Cursor, Gemini CLI, ...) that can run git, gh and bash. Disk ledger, batched probes, adversarial verification by execution, one consolidated comment. Read-only by default; with --fix it also runs a finding-by-finding fix pass. Use when the user says "/cr-single", asks for a single-agent review, wants a PR reviewed in a harness without subagents, or wants to A/B this architecture against /cr.
+license: MIT
+compatibility: Requires git, bash, an authenticated GitHub CLI (gh) and a clean working tree. Read-only - nothing in the repository is touched unless --fix is passed. Verified on Claude Code and pi.
 argument-hint: "[PR-number] [--fix] (default: PR of the current branch, review only)"
 user_invocable: true
 ---
 
 # /cr-single — agentic code review in a single agent
 
-Single-agent variant of `/cr`: **everything runs in this session, sequentially** — no subagent, no Workflow, no fan-out. The lenses are the same (`cr-*` agent definitions that ship with this plugin), applied by you as checklists; adversarial verification becomes a discipline of execution instead of an independent agent.
+Single-agent variant of `/cr`: **everything runs in this session, sequentially** — no subagent, no Workflow, no fan-out. The lenses are the same (`cr-*` definitions bundled in `references/lenses/`), applied by you as checklists; adversarial verification becomes a discipline of execution instead of an independent agent.
 
-`$ARGUMENTS` holds the PR number and/or the `--fix` flag, in any order — `/cr-single`, `/cr-single 123`, `/cr-single --fix`, `/cr-single 123 --fix` are all valid. Strip the flag before resolving the number:
+**This is the harness-agnostic entry point.** It assumes nothing beyond git, bash and an authenticated `gh`, which makes it the one that runs on pi, Claude Code, Codex, Cursor, Gemini CLI and every other Agent Skills host. `/cr` needs a subagent fan-out and is therefore Claude Code-only; this one does not.
+
+**Invocation and arguments.** The PR number and the `--fix` flag arrive in any order (`/cr-single`, `/cr-single 123`, `/cr-single --fix`, `/cr-single 123 --fix` are all valid), and *how* they reach you depends on the harness:
+
+- **Claude Code** substitutes `$ARGUMENTS` inside this file: `ARGS="$ARGUMENTS"`
+- **pi and other Agent Skills hosts** append the text after the command as a `User: …` line at the end of the skill content
+- **anywhere else** it is whatever the user asked for in their message
+
+Set `ARGS` accordingly (empty for a bare invocation) and strip the flag before resolving the number:
 
 ```bash
-FIX=0; case " $ARGUMENTS " in *" --fix "*) FIX=1;; esac
-PR_ARG="$(printf '%s' "$ARGUMENTS" | sed 's/--fix//g' | tr -d '[:space:]')"
+FIX=0; case " $ARGS " in *" --fix "*) FIX=1;; esac
+PR_ARG="$(printf '%s' "$ARGS" | sed 's/--fix//g' | tr -d '[:space:]')"
 PR_NUM="${PR_ARG:-$(gh pr view --json number -q .number)}"
 ```
 
@@ -41,14 +51,17 @@ OUT_DIR="/tmp/cr/$REPO_SLUG"; mkdir -p "$OUT_DIR"
 
 ## Resolving the lens definitions
 
-The lenses ship with this plugin as `cr-*.md` files. You do not spawn them here — you **read them and apply them**. Locate the directory once, at the start:
+The lenses ship **inside this skill**, in `references/lenses/*.md`, and you do not spawn them here; you **read them and apply them**. Resolve the directory once, at the start:
 
 ```bash
-LENS_DIR="${CLAUDE_PLUGIN_ROOT}/agents"
+# SKILL_DIR = the directory holding this SKILL.md, i.e. the one you just read
+LENS_DIR="$(bash "$SKILL_DIR/scripts/lens-dir.sh")" || exit 1
 ls "$LENS_DIR"/cr-*.md
 ```
 
-If that listing is empty or errors — you are running from a local checkout of this plugin rather than an installed copy — the definitions live in the `agents/` directory of the *agentic-cr* checkout, **not** of the repository under review. Locate it (a `find` for `cr-verifier.md` outside the reviewed repo) and confirm the listing before phase 3. **If you cannot find the definitions, stop and tell the user** — running the lenses from memory is exactly the failure this design avoids.
+`lens-dir.sh` needs no configuration: it tries the bundled copy first, then `$CLAUDE_PLUGIN_ROOT`, a local *agentic-cr* checkout, and the skill roots of the harnesses that keep Agent Skills in a shared directory (`~/.agents/skills`, `~/.pi/agent/skills`, `~/.claude/skills`, …); `CR_LENS_DIR=<dir>` overrides everything. Confirm the listing before phase 3. **If it exits 1, stop and tell the user.** Running the lenses from memory is exactly the failure this design avoids.
+
+The bundled copies are generated from the canonical `agents/cr-*.md` by `scripts/sync-lenses.sh`, with the Claude Code frontmatter stripped. Edit a lens in `agents/` and regenerate; never edit `references/lenses/` by hand.
 
 ## Preparation
 
@@ -153,7 +166,7 @@ In the multi-agent pipeline each finder reread the diff from scratch; here you r
 
 ## Phase 3 — Lens passes (sequential, cheap → expensive)
 
-For each active lens, **read `$LENS_DIR/<lens>.md` in full and apply its body as a checklist over the diff map** — including its own "Step 1", which is almost always "read what this project actually wrote before judging anything"; do it once and reuse the answer across the passes. Ignore only: the frontmatter (`tools:`, `model:`, the spawn-oriented description) and the **Report format** section, which the ledger replaces. **Do not distill or paraphrase the rules from memory** — the lens file is the source; if it changed, your pass changes with it.
+For each active lens, **read `$LENS_DIR/<lens>.md` in full and apply its body as a checklist over the diff map** — including its own "Step 1", which is almost always "read what this project actually wrote before judging anything"; do it once and reuse the answer across the passes. Ignore only the **Report format** section, which the ledger replaces. **Do not distill or paraphrase the rules from memory** — the lens file is the source; if it changed, your pass changes with it.
 
 Suggested order (textual first, execution last — probe questions accumulate for the batch):
 

@@ -19,6 +19,7 @@ own conventions before judging anything.
 - 📢 **Declared coverage** — cut lenses, unmeasurable claims and missing runtimes go under *Verification gaps*
 - 📦 **Any repo** — no project-specific configuration; `gh` infers the repository from the git remote
 - 🧩 **Two architectures** — `/cr` fans the lenses out in parallel; [`/cr-single`](#cr-single--the-same-review-in-one-agent) runs the same lenses sequentially in one agent
+- 🌐 **Any harness:** both install with `npx skills add`; `/cr-single` needs only git, bash and `gh`, so it runs on pi, Codex or Cursor, and `/cr` hands the run over there instead of degrading
 
 ---
 
@@ -66,6 +67,10 @@ PR ──► triage ──► ├─ cr-conventions ─────┤ ──►
 | `cr-code-reviewer` | Generalist sweep on feature-sized PRs, filtered at confidence ≥ 80. |
 | `cr-verifier` | Adversarial verification of candidates — the only lens that never finds anything, only judges. |
 
+The definitions are canonical in `agents/` (that is what Claude Code registers as subagent types) and are
+bundled into `skills/cr-single/references/lenses/` by `scripts/sync-lenses.sh`, because a skill installer copies
+the skill directory and nothing outside it. Edit a lens in `agents/`, run the script; CI fails when the two drift.
+
 Five of them (`cr-code-reviewer`, `cr-comment-analyzer`, `cr-silent-failure-hunter`, `cr-test-analyzer`,
 `cr-type-design`) are generalized adaptations of the agents in Anthropic's
 [`pr-review-toolkit`](https://github.com/anthropics/claude-code/tree/main/plugins/pr-review-toolkit) (MIT),
@@ -75,21 +80,54 @@ with the provenance recorded in each file.
 
 ## Requirements
 
-- [Claude Code](https://docs.claude.com/en/docs/claude-code)
 - [GitHub CLI](https://cli.github.com) (`gh`) authenticated with access to the repo
+- `git` and `bash`
 - A clean working tree on the PR branch
+- **For `/cr` only:** a harness that can spawn subagents (Claude Code with the `Workflow` tool, or one whose
+  Agent tool takes the `cr-*` agent types). `/cr` falls back to a direct Agent-tool fan-out when `Workflow` is
+  absent, and **hands the run over to `/cr-single` when no fan-out exists at all** (pi, Codex, Cursor, Gemini CLI).
 
-`/cr` uses the `Workflow` tool when available; without it the pipeline falls back to a direct Agent-tool
-fan-out. `/cr-single` needs neither — it never spawns an agent.
+`/cr-single` assumes nothing beyond the first three items, which is what makes it the cross-harness entry point.
 
 ---
 
 ## Install
 
+### Any Agent Skills harness (pi, Claude Code, Codex, Cursor, Gemini CLI and ~75 more)
+
+```bash
+npx skills add MarceloCajueiro/agentic-cr          # both skills, interactive
+npx skills add MarceloCajueiro/agentic-cr --list   # what is in the repo
+npx skills add MarceloCajueiro/agentic-cr --skill cr-single -g -a pi   # one skill, global, pi only
+```
+
+The [skills.sh](https://skills.sh) CLI installs into the right directory for each harness (`.pi/skills/`,
+`.claude/skills/`, `.agents/skills/`, …). It copies the **whole skill directory**, so `/cr-single` carries its
+lens definitions and its `lens-dir.sh` resolver with it, so there is nothing else to install. Invoke it as
+`/skill:cr-single` in pi, `/cr-single` in Claude Code.
+
+### Claude Code plugin (the parallel `/cr`, plus `/cr-single`)
+
 ```
 /plugin marketplace add MarceloCajueiro/claude-plugins
 /plugin install agentic-cr@cajueiro-plugins
 ```
+
+The plugin also registers the eleven `cr-*` lenses as subagent types, which is what `/cr` fans out.
+
+### Manual
+
+```bash
+git clone https://github.com/MarceloCajueiro/agentic-cr
+cp -r agentic-cr/skills/cr-single ~/.agents/skills/   # or .pi/skills, .claude/skills, ...
+```
+
+### Which skill runs where
+
+| Harness | `/cr` parallel fan-out | `/cr-single` one agent |
+|---|---|---|
+| Claude Code (plugin) | ✅ `Workflow` fan-out, `Agent`-tool fallback | ✅ |
+| pi, Codex, Cursor, Gemini CLI, … | ➡️ hands the run over to `/cr-single` | ✅ |
 
 ---
 
@@ -117,6 +155,11 @@ limit. The PR gets the readable version.
 `/cr-single` is a second entry point with the same triage, the same lenses, the same severities, verdicts
 and comment format — but **no subagents and no `Workflow`**: every pass runs sequentially in your own
 session. Same flags (`/cr-single`, `/cr-single 123`, `/cr-single --fix`).
+
+It is also **the cross-harness one**: it needs git, bash and `gh`, nothing more, so it is what runs on pi,
+Codex, Cursor and every other Agent Skills host, and what `/cr` hands the run over to when the session has no
+subagent fan-out. The lenses are read from `references/lenses/` inside the skill, resolved by
+`scripts/lens-dir.sh` (bundled copy first, then `$CLAUDE_PLUGIN_ROOT`, a local checkout, the shared skill roots).
 
 It exists because the fan-out costs something too: each finder reboots the project's runtime, rereads the
 diff from scratch, and pays a response-transport budget (the "8 findings / 6 lines" cap exists because an
@@ -181,7 +224,8 @@ single-pass review:
 ## Notes
 
 - Comments are written in English by default; if a repo's PRs are predominantly in another language, the pipeline follows suit.
-- A full run spawns several review agents — expect a few minutes and a corresponding token cost. The bucket ceiling is what keeps it bounded.
+- A full `/cr` run spawns several review agents — expect a few minutes and a corresponding token cost. The bucket ceiling is what keeps it bounded. `/cr-single` pays the same tokens with no parallel wall-clock gain, and no subagent-transport loss.
+- Version 2.2.0 made both skills installable by any Agent Skills harness (`npx skills add MarceloCajueiro/agentic-cr`). `/cr-single` bundles its lenses; `/cr` detects a harness without subagent support and hands the run over.
 - Version 2.1.0 added `/cr-single`. It is additive: `/cr` is unchanged, and the two coexist so the architectures can be compared on the same PR.
 - Version 2.0.0 replaced the previous architecture (two outsourced review passes, `/cr-1`, `/cr-2`, `/cr-consolidate`) with this lens team. Those commands no longer exist; `/cr` is the whole pipeline.
 
