@@ -1,45 +1,37 @@
 ---
 name: cr
-description: Agentic code review pipeline for a GitHub PR - triages the diff to decide which review lenses run, fans them out in parallel as read-only finder agents, refutes their candidates with an adversarial verifier, and posts one consolidated comment on the PR. Read-only by default; with --fix it also runs a finding-by-finding fix pass. Requires a harness with subagent support (Claude Code); on pi, Codex, Cursor or any other harness without a fan-out it hands the run over to the /cr-single skill. Use when the user wants a PR reviewed end to end, says "/cr", "review this PR", or "run the code review pipeline".
+description: Agentic code review of a GitHub PR in a single agent - triages the diff to decide which review lenses run, applies them sequentially in this very session with no subagents and no Workflow, verifies every serious candidate by execution, and posts one consolidated comment on the PR. Disk ledger, batched probes, adversarial verification. Read-only by default; with --fix it also runs a finding-by-finding fix pass. Works on any harness that can run git, gh and bash (pi, Claude Code, Codex, Cursor, Gemini CLI, ...). Use when the user says "/cr", "review this PR", or wants a PR reviewed end to end.
 license: MIT
-compatibility: Requires a harness that can spawn subagents (the Workflow tool, or an Agent/Task tool taking an agent type) plus git, bash and an authenticated GitHub CLI (gh). On a harness without subagent support the skill redirects to /cr-single instead of running degraded. Read-only unless --fix is passed.
+compatibility: Requires git, bash, an authenticated GitHub CLI (gh) and a clean working tree. Read-only - nothing in the repository is touched unless --fix is passed. Verified on Claude Code and pi.
 argument-hint: "[PR-number] [--fix] (default: PR of the current branch, review only)"
 user_invocable: true
 ---
 
 # /cr — agentic code review
 
-`$ARGUMENTS` holds the PR number and/or the `--fix` flag, in any order — `/cr`, `/cr 123`,
-`/cr --fix`, `/cr 123 --fix` are all valid. Strip the flag before resolving the number:
+**Everything runs in this session, sequentially** - no subagent, no Workflow, no fan-out. The lenses (`cr-*` definitions bundled in `references/lenses/`) are applied by you as checklists; adversarial verification is a discipline of execution instead of an independent agent.
+
+**Harness-agnostic by design.** It assumes nothing beyond git, bash and an authenticated `gh`, so it runs on pi, Claude Code, Codex, Cursor, Gemini CLI and every other Agent Skills host.
+
+**Invocation and arguments.** The PR number and the `--fix` flag arrive in any order (`/cr`, `/cr 123`, `/cr --fix`, `/cr 123 --fix` are all valid), and *how* they reach you depends on the harness:
+
+- **Claude Code** substitutes `$ARGUMENTS` inside this file: `ARGS="$ARGUMENTS"`
+- **pi and other Agent Skills hosts** append the text after the command as a `User: …` line at the end of the skill content
+- **anywhere else** it is whatever the user asked for in their message
+
+Set `ARGS` accordingly (empty for a bare invocation) and strip the flag before resolving the number:
 
 ```bash
-FIX=0; case " $ARGUMENTS " in *" --fix "*) FIX=1;; esac
-PR_ARG="$(printf '%s' "$ARGUMENTS" | sed 's/--fix//g' | tr -d '[:space:]')"
+FIX=0; case " $ARGS " in *" --fix "*) FIX=1;; esac
+PR_ARG="$(printf '%s' "$ARGS" | sed 's/--fix//g' | tr -d '[:space:]')"
 PR_NUM="${PR_ARG:-$(gh pr view --json number -q .number)}"
 ```
 
-(On a harness that does not substitute `$ARGUMENTS`, read the arguments from the line the harness appends to this skill; pi adds a `User: …` line at the end. It changes nothing else: the harness check below decides whether this pipeline runs at all.)
-
 No PR for the branch: stop and tell the user.
 
-## Harness check - do this before anything else
+**`--fix` is the only thing that authorizes phase 7.** Without it this command reviews and comments; it never edits, commits or pushes. Carry `FIX` to the end — phase 7 checks it.
 
-This pipeline spawns subagents; that is not a detail, it is the architecture. Confirm the session can do it:
-
-- it exposes the **`Workflow`** tool (the preferred fan-out), **or**
-- it exposes an **`Agent`/`Task`-style tool that accepts an agent type** and the `cr-*` agent types are listed in the session (Claude Code, plugin or local checkout).
-
-**If neither is true** (pi, Codex, Cursor, Gemini CLI, or any harness whose subagent support you cannot confirm), **do not run this pipeline solo and do not improvise a fan-out.** Hand the run over with the same arguments:
-
-1. if the session registers skills (pi: `/skill:cr-single`), invoke `cr-single`;
-2. otherwise read `<this skill's directory>/../cr-single/SKILL.md`, which is installed side by side with this skill, and execute it;
-3. if neither is reachable, tell the user to install it: `npx skills add MarceloCajueiro/agentic-cr --skill cr-single`.
-
-Announce the substitution in one line, then continue as `/cr-single`: same triage, same gates, same severities and comment format, single-agent mechanics. Running the fan-out identity without a fan-out is the one failure mode this skill must not have.
-
-**`--fix` is the only thing that authorizes phase 5.** Without it this command reviews and comments; it never edits, commits or pushes. Carry `FIX` to the end — phase 5 checks it.
-
-Everything runs against the repository of the current working directory — `gh` infers it from the git remote, so **never pass `-R`**. Resolve the default branch once and use it everywhere a base is needed:
+Everything runs against the repository of the current working directory — `gh` infers it from the git remote, so **never pass `-R`**. Resolve the default branch and the output directory once:
 
 ```bash
 BASE=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
@@ -47,29 +39,75 @@ REPO_SLUG=$(gh repo view --json nameWithOwner -q .nameWithOwner | tr '/' '-')
 OUT_DIR="/tmp/cr/$REPO_SLUG"; mkdir -p "$OUT_DIR"
 ```
 
-**Principles (they hold across the whole pipeline):**
+## Principles
 
-1. **Review does not edit, the fix pass does not review.** No code change between spawning the first agent and posting the comment — every agent must see the same diff.
-2. **A finding requires a citable rule OR executable evidence.** With neither, it does not enter. And the rule must be one the *reviewed project* actually wrote — a fabricated citation is worse than a missed finding.
-3. **A runtime claim only enters CONFIRMED by execution.** Static reading describes the path as written; execution shows what actually happens.
+1. **Review does not edit, the fix pass does not review.** No change to any repository file between the start of the triage and the posted comment. Here that is **discipline, not structure** — nothing stops you from using Edit, so the rule is yours to keep: probe files go in the session scratchpad, writes are allowed only under `$OUT_DIR` and the scratchpad, **never inside the repository working tree** (the closing check requires `git status --porcelain` empty).
+2. **A finding requires a citable rule OR executable evidence.** With neither, it does not enter the final report. And the rule must be one the *reviewed project* actually wrote — a fabricated citation is worse than a missed finding.
+3. **A runtime claim only enters CONFIRMED by execution.** The number one risk of this architecture is self-confirmation: whoever found the finding is the one who judges it. The antidote is not "reread it skeptically" — it is **a probe whose output decides**. A persona does not create independence; execution does.
 4. **Partial coverage is declared, never silent** — what was not verified goes under *Verification gaps*.
-5. **A lens with nothing to do on this diff does not run.** An agent spawned with no target costs the same wall-clock as one with a target and returns noise — the triage justifies every spawn AND every skip.
+5. **A lens with nothing to do on this diff does not run.** The triage justifies every pass AND every skip.
+6. **A finding goes into the ledger the moment it is born**, not at the end. A long context can be summarized mid-run; what lives only in your head is lost, what lives on disk survives. The final comment is assembled **from the ledger**, never from memory.
+7. **Recall posture in the find, rigor in the verify.** A bug candidate with a nameable failure scenario goes into the ledger as `[CANDIDATE]` even without proof — the "rule OR evidence" bar is applied in the verify phase, not during collection. In one agent this matters MORE: there is no second lens to catch what you dropped in silence.
 
-## Resolving agent names
+## Resolving the lens definitions
 
-The lenses ship with this plugin as agent types. Installed as a plugin they are listed as `agentic-cr:cr-verifier`, `agentic-cr:cr-conventions` and so on; running from a local checkout they may be listed under the bare name (`cr-verifier`). **Check the available agent types once at the start** and use whichever form is listed — prefixed first, bare as fallback. Use that same form in every `agentType` below. If no `cr-*` type is listed at all, go back to the **Harness check** — this session cannot run the pipeline.
+The lenses ship **inside this skill**, in `references/lenses/*.md`, and you do not spawn them here; you **read them and apply them**. Resolve the directory once, at the start:
+
+```bash
+# SKILL_DIR = the directory holding this SKILL.md, i.e. the one you just read
+LENS_DIR="$(bash "$SKILL_DIR/scripts/lens-dir.sh")" || exit 1
+ls "$LENS_DIR"/cr-*.md
+```
+
+`lens-dir.sh` needs no configuration: it tries the bundled copy first, then a local *agentic-cr* checkout, then the skill roots of the harnesses that keep Agent Skills in a shared directory (`~/.agents/skills`, `~/.pi/agent/skills`, `~/.claude/skills`, …); `CR_LENS_DIR=<dir>` overrides everything. Confirm the listing before phase 3. **If it exits 1, stop and tell the user.** Running the lenses from memory is exactly the failure this design avoids.
+
+The lenses are **canonical in `references/lenses/`**, the copy that ships inside this skill: a skill installer copies the skill directory and nothing outside it. Edit them there.
 
 ## Preparation
 
-Precondition: **clean working tree** (`git status --porcelain` empty). Record the branch and SHA — they are what you check against at the end of every phase:
+Precondition: **clean working tree** (`git status --porcelain` empty). Record the branch and SHA — they are what you check against at the close:
 
 ```bash
 git rev-parse --abbrev-ref HEAD && git rev-parse HEAD
 ```
 
-You are normally already on the PR branch: the diff is on disk (`git diff origin/$BASE...HEAD`) and nobody checks anything out. The agents get that instruction in their prompt and you verify it at the end.
+You are normally already on the PR branch: the diff is on disk (`git diff origin/$BASE...HEAD`) and nobody checks anything out.
 
-## Phase 1 — Triage: who reviews this PR, and who does not
+Create the **ledger** at `$OUT_DIR/cr_${PR_NUM}_ledger.md` (overwrite if it exists) with this skeleton:
+
+```markdown
+# Ledger /cr — PR #<N> · <branch> · <SHA> · <timestamp>
+
+## Triage
+(bucket, passes run, passes skipped — filled in phase 1)
+
+## Diff map
+(filled in phase 2)
+
+## Candidates
+(one block per candidate, appended as it is found — phase 3)
+
+## Probe questions
+(accumulated in phases 2–3, answered in batch in phase 4)
+
+## Verified and dismissed
+## Verification gaps
+```
+
+Format of each candidate in the ledger (all fields required):
+
+```markdown
+### C<n> — `file:line` — <SEV> — <short title>
+- **Lens:** <cr-*> · **Status:** CANDIDATE
+- **Problem:** <1–2 sentences>
+- **Failure scenario:** <concrete input/state → visible consequence>
+- **Rule/Evidence:** <one-line citation OR what was read/run — or "(pending probe P<k>)">
+- **Refutation attempt:** (pending — filled in phase 5)
+```
+
+Before appending, **check for a duplicate**: a candidate in the same file, within ±3 lines, with the same core verb + object is the same entry — add the lens to **Lens:** instead of creating a new one (two lenses landing on the same point is a confirmation signal, not a new finding).
+
+## Phase 1 — Triage: which lenses run, and which do not
 
 Decide from the **final diff**, not from the branch history. Collect the signals in one go:
 
@@ -80,9 +118,11 @@ git diff --unified=0 "origin/$BASE...HEAD" | grep -E '^\+' | grep -cEi 'rescue|e
 git diff --unified=0 "origin/$BASE...HEAD" | grep -E '^\+' | grep -cE '^\+\s*(class|struct|record|interface|type) '  # new type signal
 ```
 
-### Buckets (they set the ceiling on how many finders run)
+### Buckets
 
-| Bucket | Condition | Finder ceiling |
+> The gates and the cut order below are the calibration of this pipeline: the triage justifies every pass and every skip.
+
+| Bucket | Condition | Lens ceiling |
 |---|---|---|
 | 📄 **docs-only** | every file is Markdown, docs or agent/prompt definitions — **no** executable file | 1–2 |
 | 🔹 **trivial** | lockfile or version bump, or ≤10 lines in 1 file | 2 |
@@ -91,11 +131,11 @@ git diff --unified=0 "origin/$BASE...HEAD" | grep -E '^\+' | grep -cE '^\+\s*(cl
 
 **Hard rule (it precedes the docs gate):** any executable file in the diff — a shell script, a CI workflow, a migration, a template that runs, or any source file — **forbids** docs-only treatment. A PR that looks like docs can carry its Critical inside the one `.sh` nobody read.
 
-### Per-lens gates — SPAWN if, SKIP if
+### Per-lens gates — RUN if, SKIP if
 
-The SKIP predicate binds as hard as the SPAWN one: if SKIP matches, the lens **does not run** even when SPAWN also matches (SKIP is the more specific exception).
+The SKIP predicate binds as hard as the RUN one: if SKIP matches, the lens **does not run** even when RUN also matches (SKIP is the more specific exception).
 
-| Agent | SPAWN if | SKIP if |
+| Lens | RUN if | SKIP if |
 |---|---|---|
 | `cr-boundary-guard` | the diff touches source code containing a query, a request handler, a service or a permission check — **always**, it is the Critical dimension | the diff has no query, model, handler or service (only views, assets, locales, config) |
 | `cr-conventions` | the diff touches source code — **always** | nothing (it is the base lens of every code PR) |
@@ -108,225 +148,99 @@ The SKIP predicate binds as hard as the SPAWN one: if SKIP matches, the lens **d
 | `cr-type-design` | the diff creates a **new class, struct, record or value object with state of its own** | the new type is a stateless procedural service, a thin job wrapper or a test helper |
 | `cr-docs-guard` | the diff touches Markdown, a docs directory, or agent/skill/prompt definitions | — |
 
-**If the SPAWNs exceed the bucket ceiling**, cut in this order (lowest marginal yield falls first): `cr-comment-analyzer` → `cr-type-design` → `cr-code-reviewer` → `cr-test-analyzer` → `cr-silent-failure-hunter` → `cr-exec-prober`. Never cut `cr-conventions` (the base lens: it spawns unconditionally on any PR with code), `cr-boundary-guard`, `cr-docs-guard`, or `cr-data-layer` **when its trigger is a migration or a bulk write** — each covers a class of risk no other lens sees. (`cr-data-layer` triggered purely by query cost is cuttable, right after `cr-exec-prober`.)
+**If the RUNs exceed the bucket ceiling**, cut in this order (lowest marginal yield falls first): `cr-comment-analyzer` → `cr-type-design` → `cr-code-reviewer` → `cr-test-analyzer` → `cr-silent-failure-hunter` → `cr-exec-prober`. Never cut `cr-conventions`, `cr-boundary-guard`, `cr-docs-guard`, or `cr-data-layer` **when its trigger is a migration or a bulk write**. (`cr-data-layer` triggered purely by query cost is cuttable, right after `cr-exec-prober`.)
 
-**If only non-cuttable lenses remain, the ceiling yields** — run them all. The ceiling is a latency budget, not a safety switch: cutting the Critical lens to fit in four trades time for Critical risk, which is the wrong trade. The overflow goes under *Verification gaps* like any other cut.
+**If only non-cuttable lenses remain, the ceiling yields** — run them all.
 
-**Every cut goes under *Verification gaps*, with the lens name and the reason** — both the cut foreseen by the order above and a consented overflow. A cut that never appears in the comment is coverage lost in silence.
+The ceiling is an **attention budget, not a latency budget**: a cut lens is a pass you do not make. A lens run without attention is worse than a lens declared as a gap. **Every cut goes under *Verification gaps*, with the lens name and the reason.**
 
-**Cost and latency per lens** — the wave ends when the slowest agent ends, so the mix matters more than the count:
+**Record the triage in the ledger** as two lists: **passes run** (lens + the trigger, one line each) and **passes skipped** (lens + the SKIP that matched, one line each). Silence about what did not run is indistinguishable from forgetting.
 
-- The expensive lenses are the ones that boot the project's runtime (`cr-exec-prober`, `cr-data-layer`, `cr-verifier`). Their prompts already tell them to group every check into a single boot; a project with a slow boot pays that cost once per agent.
-- Purely textual lenses (`cr-docs-guard`, `cr-comment-analyzer`) run with `model: 'sonnet'` and `effort: 'low'` — their judgment is mechanical.
+## Phase 2 — Diff map (one reading, every lens consumes it)
 
-**Record the triage** (it goes in the comment) as two lists: **spawned** (agent + the trigger, one line each) **and not spawned** (agent + the SKIP that matched, one line each). Silence about what did not run is indistinguishable from forgetting.
+You read the diff **once, carefully**, and the lenses consult the map rather than rereading it. Read the full `git diff origin/$BASE...HEAD` (and whole files whenever a hunk does not explain itself) and record in the ledger:
 
-**Build the scope block** — the same one for every agent in this run (finders, verifiers and sweep all get identical context):
+- **Per file:** hunks and risk tags — `new-query`, `new-error-handling`, `migration`, `new-type`, `test`, `comment/prose`, `shell`, `bulk-write`, `external-integration`. The tags map 1:1 to the triage gates and become the index of your passes.
+- **Deletion audit** (inherited from `cr-exec-prober`, done HERE because it requires the complete reading): for every line the diff REMOVES or replaces, name the invariant or behavior it guaranteed and where the new code re-establishes it. Not found = a candidate straight into the ledger (a guard removed, an error path lost, a validation narrowed, a deleted test that covered a real case). This is the class of bug a merge or rebase creates with no visible conflict.
+- **Applicable convention docs** (`CLAUDE.md` / `AGENTS.md` at the root and in the touched directories, `CONTRIBUTING.md`, `docs/`) and the 2–4 lines of conventions that matter for this diff.
 
-```markdown
-## Review scope
-Diff: git diff origin/<BASE>...HEAD   (PR #<PR_NUM>, head <SHA>, branch <BRANCH>)
-Changed files (<n>): <list>
-Applicable convention docs: <root CLAUDE.md/AGENTS.md + the ones covering touched directories>
+## Phase 3 — Lens passes (sequential, cheap → expensive)
 
-## What changed
-<one-paragraph summary>
+For each active lens, **read `$LENS_DIR/<lens>.md` in full and apply its body as a checklist over the diff map** — including its own "Step 1", which is almost always "read what this project actually wrote before judging anything"; do it once and reuse the answer across the passes. Ignore only the **Report format** section, which the ledger replaces. **Do not distill or paraphrase the rules from memory** — the lens file is the source; if it changed, your pass changes with it.
 
-## Relevant conventions
-<2-4 lines: what in the applicable docs matters for this diff>
-```
+Suggested order (textual first, execution last — probe questions accumulate for the batch):
 
-## Phase 2 — Finder wave + verify (via the Workflow tool, from the surgical bucket up)
+1. `cr-docs-guard`, `cr-comment-analyzer` — mechanical judgment, fast
+2. `cr-conventions`, `cr-code-reviewer` (if active), `cr-type-design`
+3. `cr-boundary-guard`, `cr-silent-failure-hunter`, `cr-test-analyzer`
+4. `cr-data-layer`, `cr-exec-prober` — the ones that generate the most probe questions
 
-**The docs-only and trivial buckets (1–2 finders) do NOT use Workflow** — building a script, running it in the background and waiting for a notification costs more than the fan-out it orchestrates. Spawn those finders directly with the Agent tool, in a single block of tool calls, and go to phase 3. Workflow pays for itself from the surgical bucket up.
+During the passes:
 
-In the other buckets, **this phase runs through the `Workflow` tool** — invoking it here is part of this command's definition, so the opt-in for multi-agent orchestration is already given; do not ask the user. Why Workflow instead of a manual fan-out: the agents' output stays out of your context, dedup→verify becomes a deterministic pipeline instead of your judgment on every round, and retrying a dead agent is code rather than improvisation.
+- **Grep, Read and `git diff -S` inline, freely** — they are cheap and immediate.
+- **A check that requires booting the project's runtime or opening a database connection does NOT run now**: it becomes a numbered question under *Probe questions* in the ledger (`P<k> (C<n>): <what to run and what the output decides>`). On a project with an expensive boot, each start costs real time; the gain of batching is paying **one** for all the lenses. Do not waste that gain by firing a one-off probe in the middle of a pass.
+- A candidate is born in the ledger immediately (the Preparation format), including a `[CANDIDATE]` with no proof yet.
+- What you checked and did **not** turn into a candidate goes under *Verified and dismissed* right away, with the reason.
 
-> **Fallback:** with no `Workflow` tool available in the session, spawn the triaged finders in **a single block of tool calls** through the Agent tool and run dedup/verify by hand under the same rules as phase 3. Same result, different mechanics. With no Agent tool either, the **Harness check** applies — hand the run over to `cr-single` rather than inlining the lenses here.
+**No transport budget:** there is no intermediate delivery to truncate, so record what you find, in full.
 
-Build the script from the template below, replacing only the `FINDERS` list (from phase 1) and passing the scope block through `args`:
+**Sweep (only for diffs >400 lines):** at the end of the passes, reread the diff looking ONLY for what is not already in the ledger, focusing on what a first pass tends to miss: code moved or extracted that lost a guard or an anchor; asymmetric setup/teardown in tests; an inverted config default; a deleted line whose invariant nobody re-established. Running the sweep here, before the verify, means the verify sees everything the sweep finds.
 
-```javascript
-export const meta = {
-  name: 'agentic-cr',
-  description: 'Agentic code review: lenses in parallel, dedup, adversarial verify',
-  phases: [
-    { title: 'Find', detail: 'triaged lenses in parallel, read-only' },
-    { title: 'Verify', detail: 'cr-verifier per location group' },
-    { title: 'Sweep', detail: 'only for PRs >400 lines: gaps-only' },
-  ],
-}
+## Phase 4 — Probe checkpoint (one boot answers everything)
 
-// ── fill in from phase 1; use the agent-name form the session actually lists ──
-const FINDERS = [
-  { type: 'agentic-cr:cr-boundary-guard' },
-  { type: 'agentic-cr:cr-conventions' },
-  { type: 'agentic-cr:cr-exec-prober' },
-  // { type: 'agentic-cr:cr-docs-guard', model: 'sonnet', effort: 'low' },
-]
-const VERIFIER = 'agentic-cr:cr-verifier'
-const SWEEPER = 'agentic-cr:cr-code-reviewer'
-const SWEEP = false   // true when the diff is larger than 400 lines
+Group ALL the accumulated questions and answer them in as few runs as possible:
 
-const SCOPE = args.scope          // the scope block from phase 1
-const RECALL = `You are ALREADY on the PR branch: do NOT check out, do NOT create a branch, do NOT run stash/reset/clean, do NOT edit any file in the repository. Investigate beyond the diff (whole files, callers, dependencies). Follow your agent definition to the letter, including the finding format and the "Verified and dismissed" section.
+- **One** read-only script for the project's runtime (its REPL, script runner or equivalent — find the command in `CLAUDE.md`, the README or the Makefile). Read-only means read-only: no create/update/delete/destroy, no migration, no writes. Prefer inspecting the generated query (the ORM's SQL-dump equivalent) over executing a mutation. The script file goes in the session scratchpad, **never in the repository**.
+- **One** batched database session with every read-only query (SELECT / EXPLAIN / schema description), if the project exposes one.
+- The project's test runner on a **focused** test, when the question is about a specific test.
+- Shell script in the diff: a syntax check (`bash -n`) plus critical reading of the portability traps of the shell the project actually targets. **Do not execute a script that talks to the network or to a server.**
 
-Recall posture: a bug candidate with a nameable failure scenario goes into the report EVEN without complete proof, marked [CANDIDATE] — an independent verifier judges it next; do not silently drop the half-believed. The "citable rule OR evidence" bar applies to the pipeline's final report, not to your candidate list. A failure scenario is the visible consequence (an error, wrong output, lost data), not an intermediate state ("the value goes stale").
+If no read-only execution path is discoverable, **do not invent one** — fall back to static analysis and put what you could not run under *Verification gaps*.
 
-If you need a probe: group ALL checks into a single run of the project's runtime. On a project with an expensive boot, every extra start costs the whole wave wall-clock time. If no read-only execution path is discoverable, do not invent one — fall back to static analysis and say what you could not run.
+Record each output in the ledger next to its question, and update the **Rule/Evidence:** field of the candidates that depended on it.
 
-Output budget: at most 8 findings, each in up to 6 lines. Cite \`file:line\` and summarize — do not paste large excerpts or reproduce whole tables. An over-long response dies mid-delivery and the whole lens is lost; six lean findings beat twelve that never arrive.`
+## Phase 5 — Adversarial verify
 
-const FINDINGS = {
-  type: 'object',
-  required: ['findings', 'verified_and_dismissed'],
-  properties: {
-    findings: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['severity', 'file', 'line', 'title', 'problem', 'failure_scenario'],
-        properties: {
-          severity: { enum: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] },
-          file: { type: 'string' }, line: { type: 'integer' },
-          title: { type: 'string' }, problem: { type: 'string' },
-          failure_scenario: { type: 'string' }, suggested_fix: { type: 'string' },
-          candidate: { type: 'boolean' },       // true = [CANDIDATE], not proven
-          runtime_claim: { type: 'boolean' },   // runtime assertion with no probe
-          evidence: { type: 'string' },         // probe output or rule citation
-          rule_citation: { type: 'string' },
-        },
-      },
-    },
-    verified_and_dismissed: { type: 'array', items: { type: 'string' } },
-    coverage_gaps: { type: 'array', items: { type: 'string' } },
-  },
-}
+Now you switch sides: for every candidate that is **CRITICAL, HIGH, `[CANDIDATE]`, or carries a runtime claim**, the mission is to **REFUTE it**. The *Refutation attempt* field is mandatory — a CONFIRMED without one does not exist. The rules are `cr-verifier`'s (read `$LENS_DIR/cr-verifier.md` before this pass if you have not read it in this run):
 
-const VERDICT = {
-  type: 'object',
-  required: ['verdicts'],
-  properties: {
-    verdicts: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['index', 'verdict', 'evidence'],
-        properties: {
-          index: { type: 'integer' },
-          verdict: { enum: ['CONFIRMED', 'REFUTED', 'PLAUSIBLE', 'PRE_EXISTING'] },
-          evidence: { type: 'string' },
-          manual_check: { type: 'string' },   // PLAUSIBLE only: the shortest check
-        },
-      },
-    },
-  },
-}
+- Follow the **real path of the value** (getters, callbacks, defaults, decorators) — do not judge a function in isolation; that is the number one false positive.
+- A finding that depends on data uses a **real record** from a database you can read — a fabricated scenario neither proves nor refutes.
+- A query-cost finding needs the real generated SQL plus an execution plan — an estimate does not count.
+- A visual/CSS finding: the proof is the screen. With no app running, the maximum verdict is PLAUSIBLE plus the shortest manual check for the human.
+- Suspected pre-existing: compare against `git show origin/$BASE:<file>` on the **same record** — never stash or checkout.
+- **REFUTED only with constructible proof** (a real line cited, an impossibility demonstrated, a guard inside the diff itself, or a probe whose output contradicts it). **Do not refute as "speculative"** when the state is realistic: a concurrency race, a nil on a rare-but-reachable path, a zero-falsy treated as absent, an off-by-one on a boundary that is not excluded, a partial retry — that is PLAUSIBLE, not refuted.
 
-// ── Find phase: one lens per agent, all in parallel ──
-phase('Find')
-const reports = await parallel(FINDERS.map(f => () =>
-  agent(`${SCOPE}\n\n${RECALL}`, {
-    agentType: f.type, label: f.type, phase: 'Find', schema: FINDINGS,
-    ...(f.model ? { model: f.model } : {}), ...(f.effort ? { effort: f.effort } : {}),
-  })
-  // agent() returns null on terminal death: one second chance, then it becomes a provenance note
-  .then(r => r ?? agent(`${SCOPE}\n\n${RECALL}`, {
-    agentType: f.type, label: `${f.type}:retry`, phase: 'Find', schema: FINDINGS,
-    ...(f.model ? { model: f.model } : {}), ...(f.effort ? { effort: f.effort } : {}),
-  }))
-  .then(r => ({ type: f.type, report: r }))
-))
+Any new probe this pass requires: **batch it again** — a second runtime run at most, not one per candidate.
 
-const alive = reports.filter(r => r && r.report)
-const dead = FINDERS.map(f => f.type).filter(t => !alive.some(a => a.type === t))
-log(`finders: ${alive.length}/${FINDERS.length} responded${dead.length ? ` — no verdict from: ${dead.join(', ')}` : ''}`)
+Verdicts (update **Status:** in the ledger, with the evidence in *Refutation attempt*):
 
-// ── Justified barrier: dedup needs ALL candidates before spending a verifier ──
-const all = alive.flatMap(a => (a.report.findings || []).map(f => ({ ...f, detected_by: a.type })))
-const groups = {}
-for (const f of all) {
-  // location group: same file, line within ±3
-  const key = Object.keys(groups).find(k => {
-    const g = groups[k]
-    return g[0].file === f.file && Math.abs(g[0].line - f.line) <= 3
-  }) || `${f.file}:${f.line}`
-  ;(groups[key] = groups[key] || []).push(f)
-}
-// only a group holding a CRITICAL/HIGH, a [CANDIDATE] or an unproven runtime claim goes to verify
-const needsVerify = Object.entries(groups).filter(([, g]) =>
-  g.some(f => f.severity === 'CRITICAL' || f.severity === 'HIGH' || f.candidate || f.runtime_claim))
-log(`${all.length} candidates → ${Object.keys(groups).length} groups → ${needsVerify.length} to verify`)
+- **CONFIRMED** — the triggering input/state and the wrong output are named, with the command and output (or the cited line) that proves it.
+- **REFUTED** — drops out of the report; goes under *Verified and dismissed* with the proof (a refutation has preventive value — it stops the next round from reopening it).
+- **PLAUSIBLE** — real mechanism, uncertain trigger: attach what would confirm it plus the shortest manual check.
+- **PRE-EXISTING** — identical behavior on the default branch for the same record; its own section, a follow-up candidate.
 
-// ── Verify phase: one cr-verifier per group, judging each candidate by index ──
-phase('Verify')
-const verdicts = await parallel(needsVerify.map(([key, g]) => () =>
-  agent(`${SCOPE}
+**MEDIUM/LOW findings backed by a cited rule** do not go through execution-based refutation: check inline that the citation exists, that it comes from the reviewed project's own documents, and that it applies to that line — yes keeps it, no cuts it.
 
-Refute each candidate below INDEPENDENTLY, by index — candidates on the same line may be distinct problems. Judge by the real path of the value, with real data, not by how plausible the narrative sounds.
+## Phase 6 — Report and comment
 
-${g.map((f, i) => `[${i}] ${f.severity} ${f.file}:${f.line} — ${f.title}
-Problem: ${f.problem}
-Failure scenario: ${f.failure_scenario}
-Finder's evidence: ${f.evidence || '(none)'}`).join('\n\n')}`,
-    { agentType: VERIFIER, label: `verify:${key}`, phase: 'Verify', schema: VERDICT })
-    .then(v => ({ key, group: g, verdicts: v && v.verdicts }))
-))
-
-// ── Sweep phase: large PRs only, gaps-only ──
-let sweep = null
-if (SWEEP) {
-  phase('Sweep')
-  sweep = await agent(`${SCOPE}
-
-The following has already been found:
-${all.map(f => `- ${f.file}:${f.line} — ${f.title}`).join('\n') || '(nothing)'}
-
-Reread the diff and the functions around it looking ONLY for defects that are NOT on that list. Focus on what a first pass tends to miss: code moved or extracted that lost a guard or an anchor; asymmetric setup/teardown in tests; an inverted config default; a DELETED line whose invariant nobody re-established. Up to 8 new candidates; if there is nothing, return an empty list — do not pad.
-
-${RECALL}`, { agentType: SWEEPER, label: 'sweep', phase: 'Sweep', schema: FINDINGS })
-}
-
-return {
-  groups, verdicts: verdicts.filter(Boolean), sweep,
-  dead_agents: dead,
-  dismissed: alive.flatMap(a => a.report.verified_and_dismissed || []),
-  gaps: alive.flatMap(a => a.report.coverage_gaps || []),
-}
-```
-
-Workflow runs in the **background**: it returns a task ID immediately and the result arrives later as a task notification. Wait for it — do not re-invoke in the meantime. If the return comes back empty or odd, **read `<transcriptDir>/journal.jsonl` before diagnosing** — it records what each agent actually returned.
-
-**Sweep candidates** (when there are any) go through the same verify — summarize them in session and spawn the missing `cr-verifier` agents, or re-invoke the Workflow with `resumeFromRunId` and the sweep already inside the verify fan-out.
-
-## Phase 3 — Apply the verdicts
-
-The script already did the grouping and the verify; what is left is your judgment:
-
-1. **An exact duplicate** (same problem, same core verb + object) inside a group becomes ONE entry with `**Detected by:** <agents>` — two independent lenses landing on the same point is a confirmation signal, record it.
-2. **MEDIUM/LOW findings that are neither candidates nor runtime claims, and are not grouped with a CRITICAL/HIGH**, never reached a verifier (the script does not send them): check those yourself inline — does the citation exist, is it from the reviewed project's own documents, and does it apply to that line? Keep it if so, cut it if not.
-3. Apply the verdicts: **REFUTED** drops out (into *Verified and dismissed*, including refutations with preventive value — they stop the next round from reopening them); **CONFIRMED** enters with its evidence; **PLAUSIBLE** enters marked, with the manual check attached; **PRE_EXISTING** goes to its own section. **A candidate with no verdict** (`dead_agents`, or a verifier that died) **drops** with a provenance note — it never enters as a fabricated PLAUSIBLE.
-
-## Phase 4 — Report and comment
-
-**Composition by reference:** the comment is assembled from the verified findings **without rewriting their technical content** — the `title`, `problem`, `failure_scenario` and `evidence` fields go in as the agents produced them (paraphrasing during synthesis introduces error). Your editing is selection, ordering (correctness before cleanup at the same severity) and formatting.
+**Composition by reference:** the comment is assembled from the ledger **without rewriting its technical content** — title, problem, failure scenario and evidence go in as recorded (paraphrasing during synthesis introduces error). Your editing is selection, ordering (correctness before cleanup at the same severity) and formatting.
 
 **Readability rules — the reader is a human scanning GitHub:**
 
-1. **One finding = one numbered `####` heading**, with the title in plain language (the line that gets scanned). Never a single bullet with everything crammed inside.
+1. **One finding = one numbered `####` heading**, with the title in plain language.
 2. **Short visible layer:** location, problem (2–4 sentences in separate paragraphs), failure scenario and suggested fix. Target: ≤10 visible lines per finding.
-3. **Verification evidence ALWAYS inside `<details>`** — probe, output, ref comparison, counts. Whoever trusts the verdict does not need to open it; whoever doubts, opens it.
-4. **Backticks only for real code** (an identifier, a selector, a command). Prose with a backtick every three words becomes a wall — write the explanation in plain sentences.
-5. **Index at the top:** a table of every finding (number, severity, title, location, verdict) — the author decides where to start without scrolling the whole comment.
-6. Long auxiliary sections (*Verified and dismissed*, *Pre-existing*) go entirely inside `<details>`; *Verification gaps* and *Provenance notes* stay visible (they are actionable and they affect confidence).
+3. **Verification evidence ALWAYS inside `<details>`**.
+4. **Backticks only for real code** — prose in plain sentences.
+5. **Index at the top:** a table of every finding (number, severity, title, location, verdict).
+6. *Verified and dismissed* and *Pre-existing* go entirely inside `<details>`; *Verification gaps* stays visible.
 
-Save the full report to `$OUT_DIR/cr_$PR_NUM.md` (overwrite completely; header with PR/SHA/branch/timestamp/spawned agents) — that is the audit artifact, with no verbosity limit. Then post **ONE comment** on the PR (`gh pr comment $PR_NUM --body-file -`, body through a heredoc):
+Save the full report to `$OUT_DIR/cr_$PR_NUM.md` (header with PR/SHA/branch/timestamp/lenses run). Then post **ONE comment** on the PR (`gh pr comment $PR_NUM --body-file -`, body through a heredoc):
 
 ```markdown
 ## 🔍 Agentic code review — PR #<PR_NUM>
 
-**Lenses:** <spawned agents> · **Bucket:** <docs-only|trivial|surgical|feature>
-**Not spawned:** <agent — the SKIP that matched; …>
+**Lenses:** <passes run> · **Bucket:** <docs-only|trivial|surgical|feature>
+**Not run:** <lens — the SKIP that matched; …>
 **Scope reviewed:** <files/lines, where the logic lives>
 
 ### Index
@@ -340,20 +254,18 @@ Save the full report to `$OUT_DIR/cr_$PR_NUM.md` (overwrite completely; header w
 
 #### 1. <Plain-language title — what breaks, for whom>
 
-[`file:line`](<link>) · **CONFIRMED** · detected by <agents>
+[`file:line`](<link>) · **CONFIRMED** · lens <cr-*>
 
-<The problem in 2–4 sentences, in short paragraphs separated by blank lines.
-Plain prose; backticks only for a real identifier or command.>
+<The problem in 2–4 sentences, in short paragraphs separated by blank lines.>
 
-**Failure scenario:** <concrete input/state → visible consequence, 1–2 sentences>
+**Failure scenario:** <concrete input/state → visible consequence>
 
 **Suggested fix:** <1–2 sentences; a code snippet only if it fits in ≤5 lines>
 
 <details>
-<summary>🔬 Verification — how it was proven</summary>
+<summary>🔬 Verification — how it was proven (and the refutation attempt)</summary>
 
-<probe: command + relevant output, base-branch vs PR comparison, cited lines —
-verbosity is welcome here>
+<probe: command + relevant output, base-branch vs PR comparison, cited lines>
 
 </details>
 
@@ -367,10 +279,6 @@ verbosity is welcome here>
 - <what was not verified + the shortest manual check>
 - <a lens cut by the bucket ceiling, if any>
 - <no read-only execution path discoverable, if that was the case>
-
-### 📋 Provenance notes
-
-- <only if an agent failed or was replaced>
 
 <details>
 <summary>🔎 Pre-existing (<N>) — flagged, not fixed in this PR</summary>
@@ -407,11 +315,11 @@ If the repository's PRs and comments are predominantly written in a language oth
 git status -sb | head -1 && git rev-parse HEAD && git status --porcelain
 ```
 
-A different branch or SHA means an agent moved you — go back (`git checkout <PR branch>`). A dirty tree means an agent wrote to the repository despite its instructions — revert it and record it under *Provenance notes*. Do not trust `git push` here either: on the wrong branch it answers "Everything up-to-date" while the PR stays behind.
+A branch or SHA different from the recorded one, or a dirty tree: you broke principle 1 somewhere — revert it before going on and record it in the report. Do not trust `git push` here either: on the wrong branch it answers "Everything up-to-date" while the PR stays behind.
 
-## Phase 5 — Fix pass (inline, this session) — ONLY with `--fix`
+## Phase 7 — Fix pass (inline, this session) — ONLY with `--fix`
 
-**This phase runs only when the invocation carried `--fix`.** Without it the pipeline ends at phase 4: the comment is posted, nothing is edited, nothing is committed, nothing is pushed, and you report to the user that the review is done and the fixes are the PR owner's call. Do not offer to apply them anyway — the whole point of the flag is that touching someone's branch is their decision, not yours. `/cr --fix` is how they make it.
+**This phase runs only when the invocation carried `--fix`.** Without it the pipeline ends at phase 6: the comment is posted, nothing is edited, nothing is committed, nothing is pushed, and you report to the user that the review is done and the fixes are the PR owner's call. Do not offer to apply them anyway — the whole point of the flag is that touching someone's branch is their decision. `/cr --fix` is how they make it.
 
 **The only point in the cycle where code changes.** Only with the comment already posted. Decide **finding by finding** — do not apply in bulk, do not dismiss in bulk:
 
