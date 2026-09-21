@@ -15,18 +15,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # /cr-single reads the lenses from references/lenses/, which are generated from
-      # agents/ because skill installers copy the skill directory and nothing outside it.
-      - name: Lens definitions in sync with agents/
-        run: ./scripts/sync-lenses.sh --check
-
+      # The cr-* lenses are canonical in skills/cr/references/lenses/ and ship inside the
+      # skill, because a skill installer copies the skill directory and nothing outside it.
       - name: Shell scripts parse
         run: |
-          bash -n scripts/sync-lenses.sh
-          bash -n skills/cr-single/scripts/lens-dir.sh
+          bash -n skills/cr/scripts/lens-dir.sh
 
       - name: Lens resolver finds the bundled copy
-        run: test "$(bash skills/cr-single/scripts/lens-dir.sh)" = "$PWD/skills/cr-single/references/lenses"
+        run: test "$(bash skills/cr/scripts/lens-dir.sh)" = "$PWD/skills/cr/references/lenses"
+
+      - name: The bundled lenses are complete
+        run: |
+          lens_dir="$(bash skills/cr/scripts/lens-dir.sh)"
+          test -f "$lens_dir/cr-verifier.md"
+          test "$(find "$lens_dir" -name 'cr-*.md' | wc -l)" -ge 11
 
       - name: SKILL.md files match the Agent Skills spec
         run: python3 scripts/check-skills.py
