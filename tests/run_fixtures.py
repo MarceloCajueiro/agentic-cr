@@ -119,14 +119,26 @@ GOOD_TERMINAL = """## cr-double-check 01/10 - você decide 1 PR (1 pergunta) · 
 - ✅ **shop#8** - Texto do botão - só muda um texto, review cobre o head - https://github.com/acme/shop/pull/8
 
 Detalhe completo: /home/u/.cache/cr-double-check/20261001-100000/detalhe.md
-- shop#7: /home/u/.cache/cr-double-check/20261001-100000/acme-shop-7/detalhe.md
 """
+GOOD_DETAIL = """## [shop#7](https://github.com/acme/shop/pull/7) - Total do carrinho
+
+Head [commit abc1234](https://github.com/acme/shop/commit/abc1234) · CI verde
+
+- A limpeza não filtra o status: [cleanup.rb:12](https://github.com/acme/shop/blob/abc1234/jobs/cleanup.rb#L12).
+"""
+BAD_DETAIL = {
+    "raw url": GOOD_DETAIL.replace("[cleanup.rb:12](https://github.com/acme/shop/blob/abc1234/jobs/cleanup.rb#L12)",
+                                   "https://github.com/acme/shop/blob/abc1234/jobs/cleanup.rb#L12"),
+    "url as label": GOOD_DETAIL.replace("[shop#7]", "[https://github.com/acme/shop/pull/7]"),
+    "html": GOOD_DETAIL + "<details>\n",
+}
 BAD_TERMINAL = {
     "html": GOOD_TERMINAL.replace("- **Coberto:**", "<details>\n- **Coberto:**"),
     "markdown link": GOOD_TERMINAL.replace("`jobs/cleanup.rb:12`", "[cleanup.rb:12](https://github.com/acme/shop/blob/abc/jobs/cleanup.rb#L12)"),
     "url mid-text": GOOD_TERMINAL.replace("não filtra o status.", "não filtra o status (https://github.com/acme/shop/pull/7)."),
     "rule code": GOOD_TERMINAL.replace("Por quê:", "Por quê (H1):"),
     "relative detail path": GOOD_TERMINAL.replace("Detalhe completo: /home/u/", "Detalhe completo: ~/"),
+    "two detail paths": GOOD_TERMINAL + "- shop#7: /home/u/.cache/cr-double-check/20261001-100000/acme-shop-7/detalhe.md\n",
     "oversized block": GOOD_TERMINAL.replace("- **Coberto:**", "  - O review tinha uma lacuna.\n- **Coberto:**"),
 }
 
@@ -143,6 +155,14 @@ def run_units() -> list[str]:
             sample.write_text(text, encoding="utf-8")
             if subprocess.run([sys.executable, str(LINT), str(sample)], capture_output=True).returncode == 0:
                 problems.append(f"lint_terminal.py accepted a summary with: {name}")
+        sample.write_text(GOOD_DETAIL, encoding="utf-8")
+        out = subprocess.run([sys.executable, str(LINT), "--detail", str(sample)], capture_output=True, text=True)
+        if out.returncode != 0:
+            problems.append(f"lint_terminal.py --detail rejected a clean detail file: {out.stdout.strip()}")
+        for name, text in BAD_DETAIL.items():
+            sample.write_text(text, encoding="utf-8")
+            if subprocess.run([sys.executable, str(LINT), "--detail", str(sample)], capture_output=True).returncode == 0:
+                problems.append(f"lint_terminal.py --detail accepted a detail file with: {name}")
     for ref, want in RESOLVE_CASES.items():
         got = subprocess.run(["bash", str(COLLECT), "--resolve", ref], capture_output=True, text=True).stdout.strip()
         if got != want:

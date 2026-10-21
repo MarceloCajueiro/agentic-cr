@@ -121,8 +121,8 @@ A terminal renders plain Markdown (headings, bold, lists, inline code) and nothi
 So there are two files, and only the first one is printed:
 
 - `$OUT_DIR/terminal.md` - the decision list, the only thing you print.
-- `$OUT_DIR/<slug>/detalhe.md` - per PR, everything that does not help the decision: review and CI context, the delta judgment, what the review covered, what was dismissed and why, the rule IDs, the full links.
-- `$OUT_DIR/detalhe.md` - the full report: the decision list followed by every PR's detail, assembled from the per-PR files.
+- `$OUT_DIR/<slug>/detalhe.md` - per PR, the evidence behind the decision: review and CI context, the delta judgment, what the review covered, what was dismissed and why, the rule IDs, the links.
+- `$OUT_DIR/detalhe.md` - only for a run with several PRs: an index linking each PR's file.
 
 ### Writing rules for `terminal.md`
 
@@ -133,7 +133,7 @@ So there are two files, and only the first one is printed:
 - Questions are ordered by weight (a product or data decision before process). More than 5 questions on one PR: replace them with `Antes: revise o PR inteiro - <por quê>`.
 - The choices are short and say the consequence: `confirmado / espera produto`, `ajustar neste PR / merge agora, CSV em outro card`.
 - Short sentences, a plain hyphen, never a long dash. The PR title is shortened and loses the card number (`[ISSUE-1234] - `).
-- It ends with the full report's absolute path, then one line per judged PR with that PR's detail file, every path written out in full (never `~`, never `$OUT_DIR`), so the captain can open any of them.
+- It ends with **one** path, written out in full (never `~`, never `$OUT_DIR`): with a single PR, that PR's `detalhe.md`; with several, the index `detalhe.md`, which links each PR's file. The same content is never listed twice.
 
 ### `terminal.md`
 
@@ -153,8 +153,7 @@ So there are two files, and only the first one is printed:
 ### Fora desta rodada (<z>)
 - <repo>#<N> - <rascunho | fechado | sem acesso: motivo>
 
-Detalhe completo: <absolute path>/detalhe.md
-- <repo>#<N>: <absolute path>/<slug>/detalhe.md
+Detalhe completo: <absolute path of the PR's detalhe.md, or of the index when there are several PRs>
 ```
 
 - `Antes:` appears only when the delta after the review was judged "rodar o CR", or when the PR has no trusted review at all, which is always `rode o CR no PR inteiro`.
@@ -168,20 +167,25 @@ Detalhe completo: <absolute path>/detalhe.md
 python3 "$SKILL_DIR/scripts/lint_terminal.py" "$OUT_DIR/terminal.md"
 ```
 
-It rejects HTML, Markdown links, URLs outside a PR title line, rule codes, oversized PR blocks, and a missing or relative `Detalhe completo:` path.
+It rejects HTML, Markdown links, URLs outside a PR title line, rule codes, oversized PR blocks, and a missing, relative or repeated `Detalhe completo:` path.
 
 ### `<slug>/detalhe.md` and `detalhe.md`
 
-Each PR's file has one section, in plain Markdown (an editor or a pager reads it; full URLs are fine here).
-The full report is `terminal.md` followed by every PR's section, in the same order:
+These are opened in an editor or a Markdown viewer, where links work, so the link rule is the opposite of the terminal's: **every URL is a Markdown link with a short label**, never a raw URL.
+Labels: a PR is `[<repo>#<N>](<url>)`, code is `[<arquivo>:<linha>](<blob url at the head>)`, a commit is `[commit <sha7>](<commit url>)`, a local file is a relative link (`[<slug>/detalhe.md](<slug>/detalhe.md)`).
+
+**Each fact is written once.** The question and its choices live in the terminal; the detail adds only the evidence behind them, never a copy of them.
+A fact that supports two rules (a suite run that both closes the delta and answers "no CI") goes in the first section that needs it, and the other section says nothing about it.
+
+Each PR's file:
 
 ```markdown
-## <repo>#<N> - <título curto>
+## [<repo>#<N>](<url>) - <título curto>
 
-PR: <url> · Head: `<sha7>` · Review: <tipo> rodada <n> em `<sha7>` (<SHA impresso | links do review | por data>) · CI: <estado> · +<add>/-<del> em <files> arquivos · Card: <card>
+Head [commit <sha7>](<url>) · <tipo do review> rodada <n> em [commit <sha7>](<url>) (<SHA impresso | links do review | por data>) · CI <estado> · +<add>/-<del> em <files> arquivos · card <card>
 
-### Veredito: <Precisa de você | Aprovar direto>
-<each question with its full evidence: lines and links, what each choice implies; or the A rule and its evidence>
+### Evidência das perguntas
+<per question, numbered like the terminal: the lines and links that support it, and what each choice implies; for "Aprovar direto", the A rule's evidence>
 
 ### Coberto
 <the delta judgment and why; what the review verified and still holds; decisions already taken>
@@ -190,7 +194,23 @@ PR: <url> · Head: `<sha7>` · Review: <tipo> rodada <n> em `<sha7>` (<SHA impre
 <each dismissed lead and why, one line each>
 
 ### Regras
-<rule IDs per question, plus the ones covered, closed and dismissed; paths of signals.json and delta.json>
+<rule IDs per question, plus the ones covered, closed and dismissed; links to signals.json and delta.json>
+```
+
+`detalhe.md` (only when the run has more than one PR) is an index, not a copy: one line per PR, in the terminal's order, with no question repeated:
+
+```markdown
+# cr-double-check <dd/mm> - detalhe por PR
+
+- 🙋 [<repo>#<N>](<url>) - [detalhe](<slug>/detalhe.md)
+- ✅ [<repo>#<N>](<url>) - [detalhe](<slug>/detalhe.md)
+- Fora: [<repo>#<N>](<url>) - <motivo>
+```
+
+Check the detail files too before printing:
+
+```bash
+python3 "$SKILL_DIR/scripts/lint_terminal.py" --detail "$OUT_DIR"/*/detalhe.md "$OUT_DIR"/detalhe.md
 ```
 
 ## Step 4 - `--comment` (only with the flag)
@@ -210,7 +230,7 @@ GitHub renders HTML, so the comment can fold the detail:
 <details>
 <summary>Detalhe</summary>
 
-<the PR's section of detalhe.md, without its title>
+<the PR's detalhe.md, without its title>
 
 </details>
 

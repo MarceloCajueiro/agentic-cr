@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Checks the terminal summary of cr-double-check before it is printed.
 
-Usage: lint_terminal.py <terminal.md>   exits 0 when clean, 1 with one line per problem
+Usage: lint_terminal.py <terminal.md>              exits 0 when clean, 1 with one line per problem
+       lint_terminal.py --detail <detalhe.md> ...  checks detail files instead (see the end)
 
 A terminal renders plain Markdown (headings, bold, lists) but not HTML, and it prints a
 Markdown link as "text (very long url)", which breaks lines. So the summary must have:
@@ -12,8 +13,12 @@ Markdown link as "text (very long url)", which breaks lines. So the summary must
   - no rule codes (H4, R2, B2...): they live in the detail file only
   - per "Precisa de você" PR: the heading, an optional "Antes:" line, three lines per
     question (the question, "Por quê:", "Responda:") and one "Coberto:" line, nothing else
-  - an ending "Detalhe completo: <absolute path>" line, optionally followed by one
-    "- <repo>#<N>: <absolute path>" line per PR, every path absolute (never "~")
+  - one ending line "Detalhe completo: <absolute path>.md" (never "~"), and only one:
+    the PR's own detail file when there is a single PR, the index otherwise
+
+A detail file is opened in an editor, where Markdown links work, so it has the opposite rule
+for links: every URL is a Markdown link with a short label ([sas#4299](url),
+[form_sections.rb:66](url), [commit 8cf2452](url)), never a raw URL, and no HTML.
 """
 from __future__ import annotations
 
@@ -44,14 +49,10 @@ def lint(text: str) -> list[str]:
         if RULE_CODE_RE.search(line):
             problems.append(f"line {n}: rule code {RULE_CODE_RE.search(line).group()} belongs in the detail file, not the terminal")
 
-    tail = len(lines)
-    while tail > 0 and re.match(r"^- \S+#\d+: ", lines[tail - 1]):
-        tail -= 1
-    if not tail or not re.match(r"^Detalhe completo: /\S+\.md$", lines[tail - 1].strip()):
-        problems.append("the output must end with 'Detalhe completo: <absolute path>.md', then the per-PR paths")
-    for line in lines[tail:]:
-        if not re.match(r"^- \S+#\d+: /\S+\.md$", line.strip()):
-            problems.append(f"per-PR detail line needs an absolute .md path: {line.strip()[:60]}")
+    if not lines or not re.match(r"^Detalhe completo: /\S+\.md$", lines[-1].strip()):
+        problems.append("the output must end with one line 'Detalhe completo: <absolute path>.md'")
+    if sum(1 for l in lines if l.startswith("Detalhe completo:")) > 1 or any(re.match(r"^- \S+#\d+: /", l) for l in lines):
+        problems.append("one detail path only: the PR's file for a single PR, the index for several")
 
     # One "Precisa de você" block per "### " heading, up to the next heading.
     blocks, cur = [], None
@@ -82,10 +83,29 @@ def lint(text: str) -> list[str]:
     return problems
 
 
+def lint_detail(text: str) -> list[str]:
+    problems = []
+    for n, line in enumerate(text.splitlines(), start=1):
+        if HTML_RE.search(line):
+            problems.append(f"line {n}: no HTML in a detail file: {line.strip()[:60]}")
+        bare = re.sub(r"\]\([^)]*\)", "]()", line)
+        if URL_RE.search(bare):
+            problems.append(f"line {n}: raw URL; make it a Markdown link with a short label: {line.strip()[:60]}")
+        for label in re.findall(r"\[([^\]]*)\]\(https?://", line):
+            if "://" in label or len(label) > 60:
+                problems.append(f"line {n}: link label must be short ([sas#4299], [arquivo.rb:66], [commit abc1234]): {label[:40]}")
+    return problems
+
+
 def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
         return 2
+    if argv[0] == "--detail":
+        problems = [f"{p}: {x}" for p in argv[1:] for x in lint_detail(Path(p).read_text(encoding="utf-8"))]
+        for x in problems:
+            print(x)
+        return 1 if problems else 0
     problems = lint(Path(argv[0]).read_text(encoding="utf-8"))
     for p in problems:
         print(p)

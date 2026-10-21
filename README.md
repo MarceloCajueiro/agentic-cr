@@ -141,7 +141,7 @@ Then it gives **one verdict**, in Portuguese:
 - **🙋 Precisa de você** - with each question as one sentence, a short `file:line` link and two named choices (`Responda: confirmado / espera produto`), and the action to take first when the review is outdated by a delta that matters.
 
 The result is made for the terminal: no HTML, no long links, no rule codes, about 6 lines per PR (the question, why, and `Responda: a / b`), and `scripts/lint_terminal.py` checks that before anything is printed.
-Everything else (review and CI context, the delta judgment, what was covered and dismissed, the rule IDs) goes to Markdown files under `~/.cache/cr-double-check/<timestamp>/`, one per PR plus the full report, whose absolute paths close the output.
+Everything else (review and CI context, the delta judgment, what was covered and dismissed, the rule IDs) goes to Markdown files under `~/.cache/cr-double-check/<timestamp>/`, one per PR with short-label links and each fact written once, plus an index when the run has several PRs; one absolute path closes the output (the PR's file, or the index).
 It is read-only: no clone, no checkout, and the only write to GitHub is the `--comment` post, which edits its own previous comment instead of piling up.
 **It never approves and never merges a PR.**
 
@@ -171,7 +171,7 @@ When the review is outdated, the skill does not hand the question to you: `scrip
 `python3 tests/run_fixtures.py` runs the signal script over synthetic PRs in `tests/fixtures/` that cover both verdicts.
 Approve: a docs-only PR, a change covered by a fix pass, an outdated review whose delta only touches the README, a covered change under `docs/conf.py` (code, never docs-only).
 Needs you: an outdated review, a data fix deleting rows under three clean review rounds, a migration with red CI, an open finding, a fake review from an outsider, a review pinned to an old SHA, a commit created before the review but pushed after it, new and major dependencies, a force-push, a Portuguese review with a PLAUSIBLE HIGH, a CI workflow change and an unreadable diff.
-It also checks that `lint_terminal.py` accepts a clean terminal summary and rejects each thing a terminal cannot render (HTML, Markdown links, URLs mid-text, rule codes, a relative path, an oversized PR block), how `collect.sh` reads a PR link (an anchor such as `#issuecomment-…` never joins the number), how files are categorized, and that the diff parser does not mistake a removed `-- comment` line for a file header.
+It also checks that `lint_terminal.py` accepts a clean terminal summary and rejects each thing a terminal cannot render (HTML, Markdown links, URLs mid-text, rule codes, a relative or repeated path, an oversized PR block), and that a detail file has no raw URL, how `collect.sh` reads a PR link (an anchor such as `#issuecomment-…` never joins the number), how files are categorized, and that the diff parser does not mistake a removed `-- comment` line for a file header.
 The fixtures are written by `tests/build_fixtures.py`; CI runs the suite on every PR.
 
 ---
