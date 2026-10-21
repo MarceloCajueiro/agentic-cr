@@ -3,6 +3,10 @@
 # whose association with the repository is OWNER, MEMBER or COLLABORATOR (which includes
 # a PR author who is a member). List here the bots that post /cr, /sas-cr, /code-review
 # or "Revisão crítica" comments without such an association, one login per line.
+#
+# A team's own bots usually belong outside the published skill instead:
+#   ~/.config/cr-double-check/trusted-reviewers.txt   (same format, one login per line)
+#   CR_DOUBLE_CHECK_TRUSTED=bot-a,bot-b               (environment, comma-separated)
+#
 # A review-looking comment from anyone else (an outside contributor) is reported as
 # ignored, never counted, so an outsider cannot paste a fake "no findings" review.
-portabilis-fabrica-ai

@@ -120,7 +120,7 @@ The block is the unit: the summary, the terminal and the PR comment all reuse it
 - Short sentences (up to ~20 words), a plain hyphen, never a long dash.
 - Links always have a short label: a PR is `[<repo>#<N>](<url>)` (drop the owner when every PR in the run shares it), code is `[<arquivo>:<linha>](https://github.com/<owner>/<repo>/blob/<head>/<path>#L<linha>)` with just the file name (the shortest unique path when two files share a name). Never a raw URL.
 - A SHA appears only in the folded part and in the comment footer.
-- The PR title is shortened and loses the card number (`[ISSUE-9261] - `); the card goes in the folded context line.
+- The PR title is shortened and loses the card number (`[ISSUE-1234] - `); the card goes in the folded context line.
 - At most 5 items in any list (PRs per group, questions per PR, lines in a folded block).
 - A question is: one sentence ending in `?`, one sentence of context with the link, an optional separate sentence with how to check, then `Responda: **<opção A>** / **<opção B>**`.
   The choices are short and say the consequence: `confirmado / espera produto`, `confiro no Excel / aceito o risco`, `aplicar antes do merge / aceito o risco`.

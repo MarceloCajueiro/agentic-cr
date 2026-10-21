@@ -65,7 +65,7 @@ How to judge an H flag:
 Notes:
 
 - **Who counts as a reviewer.** A comment counts as a review by its body signature (the `/cr` header and footer, the `/sas-cr` header, `Code review - ...`, `Revisão crítica - ...`) **and** a trusted author.
-  Trusted means: the `gh` user running the check, a login in `references/trusted-reviewers.txt`, or a comment author whose GitHub association with the repository is OWNER, MEMBER (member of the owning organization) or COLLABORATOR.
+  Trusted means: the `gh` user running the check, a login in `references/trusted-reviewers.txt`, in `~/.config/cr-double-check/trusted-reviewers.txt` or in `CR_DOUBLE_CHECK_TRUSTED` (the place for a team's own bots, kept out of the published skill), or a comment author whose GitHub association with the repository is OWNER, MEMBER (member of the owning organization) or COLLABORATOR.
   A review-looking comment from anyone else (an outside contributor) is listed as ignored, so an outsider cannot paste a fake "no findings" review.
   A member who authors the PR is trusted like any other member: the protection is against outsiders, not against the team.
 - **Several rounds and several reviewers.** Only the latest round of each kind counts.

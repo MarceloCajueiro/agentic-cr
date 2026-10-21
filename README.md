@@ -161,7 +161,7 @@ In doubt, the verdict is "Precisa de você".
 Part of the rules are **gates**, decided mechanically by `scripts/signals.py` from the PR data (a migration path, a red check, an open finding with no reply, no trusted review); a gate cannot be argued away.
 The rest are **judgment**: the script raises *flags* (a money or permission keyword in a changed line, a gap in the review), and the agent confirms each one against the hunk or dismisses it with a one-line reason that goes into the verdict.
 
-A review comment counts only from the `gh` user running the check, a login listed in `references/trusted-reviewers.txt`, or an author whose association with the repository is OWNER, MEMBER or COLLABORATOR (a member who authors the PR included); a review-looking comment from an outside contributor is reported as ignored.
+A review comment counts only from the `gh` user running the check, a login listed in `references/trusted-reviewers.txt`, in `~/.config/cr-double-check/trusted-reviewers.txt` or in `CR_DOUBLE_CHECK_TRUSTED` (where a team's own review bots go), or an author whose association with the repository is OWNER, MEMBER or COLLABORATOR (a member who authors the PR included); a review-looking comment from an outside contributor is reported as ignored.
 
 When the review is outdated, the skill does not hand the question to you: `scripts/delta.py` lists what changed after it, and the agent decides whether that delta is covered (same pattern already reviewed, small, tested) or whether the CR should run again on the delta or on the whole PR, and says why.
 
