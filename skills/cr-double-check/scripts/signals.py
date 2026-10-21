@@ -25,6 +25,9 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 MARKER = "<!-- cr-double-check -->"
+# People with write access to the repository. A review-looking comment from anyone else
+# (CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, NONE) is ignored unless listed by login.
+TRUSTED_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 MAX_HITS = 8
 
 # ---------------------------------------------------------------- file categories
@@ -192,16 +195,19 @@ def dependency_changes(path: str, change: dict[str, list[tuple[int, str]]]) -> l
 
 REVIEW_SIGNATURES = [
     ("cr", re.compile(r"(?im)^\s*#{1,3}\s*(?:🔍\s*)?(agentic code review|code review agêntico|revisão de código agêntica)\b")),
-    ("cr", re.compile(r"(?i)(generated|gerado)\s+(by|por)\s+\[/cr\]")),
+    ("cr", re.compile(r"(?i)(generated|gerado)\s+(by|por)\s+\[?/(cr|sas-cr)\b")),
     ("code-review", re.compile(r"(?im)^\s*#{1,3}\s*code review\s*[-\u2013\u2014]\s*(?!fix pass)\S")),
     ("revisao-critica", re.compile(r"(?im)^\s*#{1,3}\s*revisão crítica\s*[-\u2013\u2014]\s*(?!fix pass)\S")),
 ]
 FIX_REPLY_RE = re.compile(
     r"(?i)(fix pass|resposta ao code review|achados do code review|applied:|\*\*applied\*\*|not applied|aplicad[oa]s?\b|não aplicad)"
 )
-REVIEWED_SHA_RE = re.compile(r"(?im)\*\*SHA(?: revisado)?:\*\*\s*`?([0-9a-f]{7,40})`?")
+REVIEWED_SHA_RE = re.compile(r"(?im)(?:\*\*SHA(?: revisado)?:\*\*\s*|\bHEAD\s+)`?([0-9a-f]{40})\b")
 SHA_MENTION_RE = re.compile(r"\b([0-9a-f]{7,40})\b")
-INDEX_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([A-Za-z_ -]+?)\s*\|\s*$")
+INDEX_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]+?)\s*\|\s*$")
+# The reviews write their verdicts in English or Portuguese.
+VERDICTS = {"CONFIRMADO": "CONFIRMED", "PLAUSÍVEL": "PLAUSIBLE", "PLAUSIVEL": "PLAUSIBLE", "REFUTADO": "REFUTED",
+            "PRÉ_EXISTENTE": "PRE_EXISTING", "PRE_EXISTENTE": "PRE_EXISTING", "PRÉ-EXISTENTE": "PRE_EXISTING"}
 SEVERITIES = [("CRITICAL", ("🚨", "critical", "crítico", "critico")), ("HIGH", ("⚠️", "⚠", "high", "alto")),
               ("MEDIUM", ("📝", "medium", "médio", "medio")), ("LOW", ("💡", "low", "baixo"))]
 NOT_RUN_RE = re.compile(r"(?im)^\*\*(not run|não rodaram|não rodadas|não rodou):\*\*\s*(.+)$")
@@ -224,13 +230,18 @@ def severity(cell: str) -> str:
     return cell.strip() or "?"
 
 
+def normalize_verdict(cell: str) -> str:
+    word = re.sub(r"[*`]", "", cell).strip().upper().replace(" ", "_").replace("-", "_")
+    return VERDICTS.get(word, word)
+
+
 def parse_index(body: str) -> list[dict]:
     rows = []
     for line in body.splitlines():
         m = INDEX_ROW_RE.match(line.strip())
         if m:
             rows.append({"n": int(m.group(1)), "sev": severity(m.group(2)), "title": m.group(3),
-                         "where": m.group(4).strip("` "), "verdict": m.group(5).strip().upper().replace(" ", "_").replace("-", "_")})
+                         "where": m.group(4).strip("` "), "verdict": normalize_verdict(m.group(5))})
     return rows
 
 
@@ -260,13 +271,14 @@ def collect_entries(pr: dict) -> list[dict]:
     entries = []
     for c in pr.get("comments") or []:
         entries.append({"source": "comment", "author": (c.get("author") or {}).get("login", ""), "at": c["createdAt"],
-                        "body": c.get("body") or "", "url": c.get("url", ""), "commit": None})
+                        "body": c.get("body") or "", "url": c.get("url", ""), "commit": None,
+                        "association": c.get("authorAssociation", "")})
     for r in pr.get("reviews") or []:
         if not r.get("submittedAt"):
             continue
         entries.append({"source": "review", "author": (r.get("author") or {}).get("login", ""), "at": r["submittedAt"],
                         "body": r.get("body") or "", "url": "", "commit": (r.get("commit") or {}).get("oid"),
-                        "state": r.get("state")})
+                        "state": r.get("state"), "association": r.get("authorAssociation", "")})
     entries.sort(key=lambda e: ts(e["at"]))
     return entries
 
@@ -364,6 +376,9 @@ def main(argv: list[str]) -> int:
         events = [json.loads(l) for l in (bundle / "events.jsonl").read_text().splitlines() if l.strip()]
     trusted = load_trusted(bundle, extra)
 
+    def is_trusted(e: dict) -> bool:
+        return e["author"] in trusted or e.get("association") in TRUSTED_ASSOCIATIONS
+
     gates: dict[str, list[str]] = {}
     flags: dict[str, dict] = {}
 
@@ -421,14 +436,14 @@ def main(argv: list[str]) -> int:
     for e in entries:
         kind = review_kind(e["body"])
         if kind:
-            if e["author"] not in trusted:
+            if not is_trusted(e):
                 ignored.append({"author": e["author"], "at": e["at"], "kind": kind, "url": e["url"]})
                 continue
             m = REVIEWED_SHA_RE.search(e["body"])
             e["reviewed_sha"] = m.group(1) if m else (e["commit"] if e["source"] == "review" else None)
             e["kind"] = kind
             reviews.append(e)
-        elif e["author"] in trusted and MARKER not in e["body"] and FIX_REPLY_RE.search(e["body"]):
+        elif is_trusted(e) and MARKER not in e["body"] and FIX_REPLY_RE.search(e["body"]):
             fix_replies.append(e)
 
     latest_by_kind: dict[str, dict] = {}
@@ -452,7 +467,7 @@ def main(argv: list[str]) -> int:
     review_out.sort(key=lambda x: ts(x["at"]))
 
     if not review_out:
-        gate("R1", "no agentic review comment from a trusted author")
+        gate("R1", "no agentic review comment from a trusted author (write access or references/trusted-reviewers.txt)")
     else:
         latest = review_out[-1]
         if not latest["staleness"]["current"]:
@@ -461,7 +476,7 @@ def main(argv: list[str]) -> int:
             if not older["staleness"]["current"]:
                 add_hit(flags, "R2", older["kind"], f"older review kind does not cover the head: {older['staleness']['reason']}")
         for rv in review_out:
-            open_rows = [x for x in rv["index"] if x["verdict"] not in ("REFUTED", "PRE_EXISTING", "PRE-EXISTING")]
+            open_rows = [x for x in rv["index"] if x["verdict"] not in ("REFUTED", "PRE_EXISTING")]
             if open_rows and not rv["fix_replies"]:
                 for x in open_rows:
                     gate("R3", f"{rv['kind']} finding {x['n']} ({x['sev']}, {x['verdict']}) at {x['where']} with no fix-pass reply")
@@ -483,11 +498,13 @@ def main(argv: list[str]) -> int:
         gate("T1", f"CI {ci['state']}: {', '.join(ci['failing'] or ci['pending'])}")
     head7 = pr["headRefOid"][:7]
     evidence = []
-    for e in entries:
-        if e["author"] in trusted and MARKER not in e["body"]:
+    body_entry = {"at": "", "body": pr.get("body") or "", "source": "pr-body"}
+    for e in [body_entry] + entries:
+        if (e["source"] == "pr-body" or is_trusted(e)) and MARKER not in e["body"]:
             for line in e["body"].splitlines():
                 if TEST_EVIDENCE_RE.search(line):
-                    evidence.append({"at": e["at"], "mentions_head": head7 in e["body"], "line": line.strip()[:200]})
+                    evidence.append({"source": e["source"], "at": e["at"], "mentions_head": head7 in e["body"],
+                                     "line": line.strip()[:200]})
     if bucket == "code" and not by_cat.get("test"):
         add_hit(flags, "T2", "diff", "code changed and no test file in the diff")
     if bucket == "code" and ci["state"] == "none" and not any(x["mentions_head"] for x in evidence):
