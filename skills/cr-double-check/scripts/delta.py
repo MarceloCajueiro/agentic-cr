@@ -10,7 +10,9 @@ review (the unreviewed ones and the fix-pass ones) fetches its parents and files
 For a merge commit, GitHub lists the files against the first parent, which is what the
 merge brought from the base branch. `touches_reviewed_files` is the part of that list the
 reviewed diff had changed (base branch...reviewed SHA): the only place a merge can alter
-code the review saw. Read-only.
+code the review saw. When the history was rewritten after the review there are no commits to
+list, so `delta_by_compare` measures the delta from the reviewed commit to the head instead
+(or says the comparison failed). Read-only.
 """
 from __future__ import annotations
 
@@ -77,7 +79,21 @@ def main(argv: list[str]) -> int:
                 totals["categories"].add(f["category"])
         out_commits.append(entry)
 
+    # A rewritten history (rebase + force-push) leaves no commit list to walk: measure the
+    # delta by comparing the reviewed commit with the head, and say when even that fails.
+    by_compare = None
+    if not st["current"] and not commits and reviewed:
+        try:
+            cmp = gh_json("api", f"repos/{repo}/compare/{reviewed}...{pr['headRefOid']}")
+            by_compare = {"files": [{"path": f["filename"], "additions": f.get("additions", 0), "deletions": f.get("deletions", 0)}
+                                    for f in cmp.get("files") or []],
+                          "ahead_by": cmp.get("ahead_by"), "behind_by": cmp.get("behind_by")}
+        except RuntimeError as exc:
+            by_compare = {"error": f"the reviewed commit cannot be compared with the head: {exc}"}
+
     out = {
+        "current": st["current"],
+        "stale_reason": st["reason"],
         "review": {"kind": latest["kind"], "at": latest["at"], "reviewed_sha": reviewed, "sha_source": latest.get("sha_source")},
         "head": pr["headRefOid"],
         "reviewed_files": sorted(reviewed_files),
@@ -86,6 +102,7 @@ def main(argv: list[str]) -> int:
                        "files": sorted(totals["files"]), "categories": sorted(totals["categories"])},
         "commits": out_commits,
         "force_pushed_after": st["force_pushed_after"],
+        "delta_by_compare": by_compare,
         "compare_hint": f"gh api repos/{repo}/compare/{reviewed}...{pr['headRefOid']}" if reviewed else "",
     }
     text = json.dumps(out, ensure_ascii=False, indent=2)

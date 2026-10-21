@@ -78,6 +78,7 @@ Notes:
 
 When the review does not cover the head, **you decide** whether the change since then needs a new review; you do not hand that question to the captain.
 Run `scripts/delta.py` on the bundle: it lists every commit after the review (unreviewed and fix-pass) with its files and line counts, and for a merge, which files the review had seen.
+After a rewritten history (`stale_reason` says the reviewed SHA left the PR), the commit list is empty and `delta_by_compare` holds the real delta; when that comparison failed, the outcome is "rodar o CR inteiro".
 Read those commits' diffs, then pick one of three outcomes and write its reason in one line:
 
 1. **Coberto** - no point, it goes in the covered part of the verdict.
@@ -87,7 +88,7 @@ Read those commits' diffs, then pick one of three outcomes and write its reason 
    - it touches no H area the review did not already cover;
    - each behavior change has a test in the delta, or is exercised by a suite reported green on the head;
    - a merge from the base branch changed none of the files the review saw (`touches_reviewed_files` empty), or only lines the PR does not change.
-   A delta of only docs or tests is always "coberto".
+   A delta of only docs, or only of tests added or adjusted, is always "coberto"; a delta that removes a test is judged like any other.
 2. **Rodar o CR no delta** - the delta adds logic the review did not see but stays within the nature of the PR (same area, same kind of change).
    The point recommends a CR round focused on `<reviewed>..<head>`, naming the files, and why.
 3. **Rodar o CR inteiro** - the delta changes the nature of the PR: a new H area, a new feature or module, a rewrite of logic the review checked, a delta larger than what was reviewed, a merge that changed files the review saw, or a force-push whose old commits cannot be compared.
