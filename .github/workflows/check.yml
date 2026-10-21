@@ -20,6 +20,7 @@ jobs:
       - name: Shell scripts parse
         run: |
           bash -n skills/cr/scripts/lens-dir.sh
+          bash -n skills/cr-double-check/scripts/collect.sh
 
       - name: Lens resolver finds the bundled copy
         run: test "$(bash skills/cr/scripts/lens-dir.sh)" = "$PWD/skills/cr/references/lenses"
@@ -32,3 +33,7 @@ jobs:
 
       - name: SKILL.md files match the Agent Skills spec
         run: python3 scripts/check-skills.py
+
+      # Synthetic PRs covering both verdicts; the cr-double-check gates must match each case.
+      - name: cr-double-check fixtures
+        run: python3 tests/run_fixtures.py
