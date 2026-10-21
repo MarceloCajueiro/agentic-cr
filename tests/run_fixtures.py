@@ -9,6 +9,10 @@ The runner writes the case as the bundle collect.sh would, runs signals.py on it
   verdict           "aprovar" requires zero gates; "precisa" with no gate is a judgment case
   bucket, ci, ...   the other expected fields, when present
 
+It also runs a few unit checks on the pieces a fixture cannot reach: how collect.sh reads a
+PR reference (no network), how a file is categorized, and how the diff parser handles a
+removed line that looks like a file header.
+
 The verdict of a judgment case is the documented answer the skill must reach by reading;
 the runner cannot execute that reading, so it checks that the gates do not contradict it.
 Standard library only.
@@ -22,7 +26,9 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SIGNALS = ROOT / "skills" / "cr-double-check" / "scripts" / "signals.py"
+SCRIPTS = ROOT / "skills" / "cr-double-check" / "scripts"
+SIGNALS = SCRIPTS / "signals.py"
+COLLECT = SCRIPTS / "collect.sh"
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
@@ -69,10 +75,53 @@ def run_case(path: Path) -> list[str]:
         problems.append(f"ignored review-like comments {len(out['ignored_review_like_comments'])} != {exp['ignored']}")
     if "dependency_gates" in exp and len(out["gates"].get("H7", [])) != exp["dependency_gates"]:
         problems.append(f"H7 gates {out['gates'].get('H7')} != {exp['dependency_gates']} entries")
+    if "sha_source" in exp and out["reviews"][-1].get("sha_source") != exp["sha_source"]:
+        problems.append(f"sha_source {out['reviews'][-1].get('sha_source')} != {exp['sha_source']}")
     if "verdicts" in exp:
         got = [row["verdict"] for rv in out["reviews"] for row in rv["index"]]
         if got != exp["verdicts"]:
             problems.append(f"index verdicts {got} != {exp['verdicts']}")
+    return problems
+
+
+RESOLVE_CASES = {
+    "https://github.com/acme/shop/pull/123": "acme/shop 123",
+    "https://github.com/acme/shop/pull/123/files": "acme/shop 123",
+    "https://github.com/acme/shop/pull/123#issuecomment-456": "acme/shop 123",
+    "https://github.com/acme/shop.js/pull/9?notification_referrer_id=77": "acme/shop.js 9",
+    "acme/shop#45": "acme/shop 45",
+    "#7": ". 7",
+    "12": ". 12",
+}
+CATEGORY_CASES = {
+    "README.md": "docs", "docs/guide.md": "docs", "docs/notes.txt": "docs", "docs/img/flow.png": "docs",
+    "LICENSE": "docs", "docs/conf.py": "code", "docs/build.sh": "code", "CMakeLists.txt": "code",
+    "robots.txt": "code", "requirements.txt": "code", "spec/models/cart_spec.rb": "test",
+    "src/cart.test.ts": "test", "skills/x/SKILL.md": "prompt", "AGENTS.md": "prompt", "app/models/cart.rb": "code",
+}
+HEADER_LOOKALIKE_DIFF = (
+    "diff --git a/fix.sql b/fix.sql\n--- a/fix.sql\n+++ b/fix.sql\n@@ -1,3 +1,2 @@\n"
+    "--- old comment\n DELETE FROM t WHERE dup;\n-++ odd\n+UPDATE t SET a = 1;\n"
+)
+
+
+def run_units() -> list[str]:
+    problems = []
+    for ref, want in RESOLVE_CASES.items():
+        got = subprocess.run(["bash", str(COLLECT), "--resolve", ref], capture_output=True, text=True).stdout.strip()
+        if got != want:
+            problems.append(f"collect.sh --resolve {ref!r} -> {got!r}, expected {want!r}")
+    if subprocess.run(["bash", str(COLLECT), "--resolve", "not a pr"], capture_output=True).returncode == 0:
+        problems.append("collect.sh --resolve accepted 'not a pr'")
+    sys.path.insert(0, str(SCRIPTS))
+    import signals  # noqa: E402
+    for path, want in CATEGORY_CASES.items():
+        if signals.categorize(path) != want:
+            problems.append(f"categorize({path!r}) = {signals.categorize(path)!r}, expected {want!r}")
+    parsed = signals.parse_diff(HEADER_LOOKALIKE_DIFF)
+    want = {"fix.sql": {"added": [(2, "UPDATE t SET a = 1;")], "removed": [(1, "-- old comment"), (3, "++ odd")]}}
+    if parsed != want:
+        problems.append(f"parse_diff on a removed '-- ' line: {parsed}")
     return problems
 
 
@@ -94,6 +143,11 @@ def main() -> int:
                 print(f"     {p}")
         else:
             print(f"ok   {name}")
+    unit_problems = run_units()
+    print("ok   unit checks" if not unit_problems else "FAIL unit checks")
+    for p in unit_problems:
+        print(f"     {p}")
+    failed += bool(unit_problems)
     if not verdicts["aprovar"] or not verdicts["precisa"]:
         print("the fixtures must cover both verdicts", file=sys.stderr)
         return 1

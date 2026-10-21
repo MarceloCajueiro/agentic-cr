@@ -25,14 +25,21 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 MARKER = "<!-- cr-double-check -->"
-# People with write access to the repository. A review-looking comment from anyone else
-# (CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, NONE) is ignored unless listed by login.
+# Insiders: the repository owner, members of the owning organization and invited
+# collaborators. This includes a PR author who is a member; the protection is against
+# outsiders (CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, NONE), whose review-looking comments are
+# ignored unless their login is listed in references/trusted-reviewers.txt.
 TRUSTED_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 MAX_HITS = 8
 
 # ---------------------------------------------------------------- file categories
 
-DOC_RE = re.compile(r"(?i)(\.(md|mdx|rst|adoc|txt)$|^docs?/|/docs?/|(^|/)(LICENSE|CHANGELOG|NOTICE)[^/]*$)")
+# Documents by extension; a .txt or an image only inside docs/. Anything else, even under
+# docs/ (conf.py, build.sh), is code: it runs somewhere.
+DOC_RE = re.compile(
+    r"(?i)(\.(md|mdx|rst|adoc)$|(^|/)docs?/(.+/)?[^/]+\.(txt|png|jpe?g|gif|svg|webp)$"
+    r"|(^|/)(LICENSE|CHANGELOG|NOTICE|AUTHORS)(\.[a-z]+)?$)"
+)
 PROMPT_RE = re.compile(r"(?i)((^|/)(\.claude|\.agents|\.pi|agents|prompts|skills)/|(^|/)(AGENTS|CLAUDE|SKILL|GEMINI)\.md$)")
 TEST_RE = re.compile(
     r"(?i)((^|/)(spec|specs|test|tests|__tests__|e2e|cypress|playwright)/"
@@ -104,15 +111,39 @@ PATH_FLAGS = {
 
 # ---------------------------------------------------------------- diff parsing
 
-HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 def parse_diff(text: str) -> dict[str, dict[str, list[tuple[int, str]]]]:
-    """{path: {"added": [(new_line, text)], "removed": [(old_line, text)]}}"""
+    """{path: {"added": [(new_line, text)], "removed": [(old_line, text)]}}
+
+    Hunk bodies are consumed by the line counts of their @@ header, so a removed
+    "-- comment" (diff line "--- comment") is content, never a file header.
+    """
     files: dict[str, dict[str, list[tuple[int, str]]]] = {}
     cur = None
     old_no = new_no = 0
+    old_left = new_left = 0
     for line in text.splitlines():
+        if old_left > 0 or new_left > 0:
+            if line.startswith("\\"):
+                continue  # "\ No newline at end of file" belongs to no side
+            if line.startswith("+"):
+                if cur is not None:
+                    cur["added"].append((new_no, line[1:]))
+                new_no += 1
+                new_left -= 1
+            elif line.startswith("-"):
+                if cur is not None:
+                    cur["removed"].append((old_no, line[1:]))
+                old_no += 1
+                old_left -= 1
+            else:
+                old_no += 1
+                new_no += 1
+                old_left -= 1
+                new_left -= 1
+            continue
         if line.startswith("diff --git "):
             cur = None
             continue
@@ -130,19 +161,9 @@ def parse_diff(text: str) -> dict[str, dict[str, list[tuple[int, str]]]]:
             continue
         m = HUNK_RE.match(line)
         if m:
-            old_no, new_no = int(m.group(1)), int(m.group(2))
-            continue
-        if cur is None:
-            continue
-        if line.startswith("+"):
-            cur["added"].append((new_no, line[1:]))
-            new_no += 1
-        elif line.startswith("-"):
-            cur["removed"].append((old_no, line[1:]))
-            old_no += 1
-        elif line.startswith(" "):
-            old_no += 1
-            new_no += 1
+            old_no, new_no = int(m.group(1)), int(m.group(3))
+            old_left = int(m.group(2)) if m.group(2) is not None else 1
+            new_left = int(m.group(4)) if m.group(4) is not None else 1
     return files
 
 
@@ -204,6 +225,8 @@ FIX_REPLY_RE = re.compile(
 )
 REVIEWED_SHA_RE = re.compile(r"(?im)(?:\*\*SHA(?: revisado)?:\*\*\s*|\bHEAD\s+)`?([0-9a-f]{40})\b")
 SHA_MENTION_RE = re.compile(r"\b([0-9a-f]{7,40})\b")
+# /cr prints no reviewed SHA, but its finding links point at the reviewed head.
+BLOB_SHA_RE = r"github\.com/{repo}/blob/([0-9a-f]{{40}})/"
 INDEX_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]+?)\s*\|\s*$")
 # The reviews write their verdicts in English or Portuguese.
 VERDICTS = {"CONFIRMADO": "CONFIRMED", "PLAUSÍVEL": "PLAUSIBLE", "PLAUSIVEL": "PLAUSIBLE", "REFUTADO": "REFUTED",
@@ -281,6 +304,21 @@ def collect_entries(pr: dict) -> list[dict]:
                         "state": r.get("state"), "association": r.get("authorAssociation", "")})
     entries.sort(key=lambda e: ts(e["at"]))
     return entries
+
+
+def reviewed_sha(entry: dict, repo: str) -> tuple[str | None, str]:
+    """The commit a review saw, and how it is known: printed, a GitHub review's commit,
+    the finding links, or nothing (then staleness falls back to commit dates)."""
+    m = REVIEWED_SHA_RE.search(entry["body"])
+    if m:
+        return m.group(1), "printed"
+    if entry["source"] == "review" and entry.get("commit"):
+        return entry["commit"], "review-commit"
+    if repo:
+        shas = re.findall(BLOB_SHA_RE.format(repo=re.escape(repo)), entry["body"])
+        if shas:
+            return max(set(shas), key=shas.count), "links"
+    return None, "dates"
 
 
 def staleness(review: dict, pr: dict, fix_replies: list[dict], events: list[dict]) -> dict:
@@ -375,6 +413,7 @@ def main(argv: list[str]) -> int:
     if (bundle / "events.jsonl").exists():
         events = [json.loads(l) for l in (bundle / "events.jsonl").read_text().splitlines() if l.strip()]
     trusted = load_trusted(bundle, extra)
+    repo = (bundle / "repo.txt").read_text().strip() if (bundle / "repo.txt").exists() else ""
 
     def is_trusted(e: dict) -> bool:
         return e["author"] in trusted or e.get("association") in TRUSTED_ASSOCIATIONS
@@ -439,8 +478,7 @@ def main(argv: list[str]) -> int:
             if not is_trusted(e):
                 ignored.append({"author": e["author"], "at": e["at"], "kind": kind, "url": e["url"]})
                 continue
-            m = REVIEWED_SHA_RE.search(e["body"])
-            e["reviewed_sha"] = m.group(1) if m else (e["commit"] if e["source"] == "review" else None)
+            e["reviewed_sha"], e["sha_source"] = reviewed_sha(e, repo)
             e["kind"] = kind
             reviews.append(e)
         elif is_trusted(e) and MARKER not in e["body"] and FIX_REPLY_RE.search(e["body"]):
@@ -457,7 +495,7 @@ def main(argv: list[str]) -> int:
         not_run = NOT_RUN_RE.search(r["body"])
         review_out.append({
             "kind": kind, "author": r["author"], "at": r["at"], "url": r["url"], "rounds": rounds,
-            "reviewed_sha": r.get("reviewed_sha"), "staleness": st,
+            "reviewed_sha": r.get("reviewed_sha"), "sha_source": r.get("sha_source"), "staleness": st,
             "index": parse_index(r["body"]),
             "no_findings": bool(re.search(r"(?i)(nenhum finding|nenhum achado|no findings|nenhum bloqueio)", r["body"])),
             "gaps": parse_gaps(r["body"]),
@@ -467,11 +505,13 @@ def main(argv: list[str]) -> int:
     review_out.sort(key=lambda x: ts(x["at"]))
 
     if not review_out:
-        gate("R1", "no agentic review comment from a trusted author (write access or references/trusted-reviewers.txt)")
+        gate("R1", "no agentic review comment from a trusted author (OWNER/MEMBER/COLLABORATOR, the gh user, or references/trusted-reviewers.txt)")
     else:
         latest = review_out[-1]
+        # Not a gate: the agent judges the delta (criteria.md, R2) and decides between
+        # "coberto", a CR round on the delta, or a whole new CR.
         if not latest["staleness"]["current"]:
-            gate("R2", f"latest review ({latest['kind']}, {latest['at']}) does not cover the head: {latest['staleness']['reason']}")
+            add_hit(flags, "R2", latest["kind"], f"latest review ({latest['at']}) does not cover the head: {latest['staleness']['reason']}")
         for older in review_out[:-1]:
             if not older["staleness"]["current"]:
                 add_hit(flags, "R2", older["kind"], f"older review kind does not cover the head: {older['staleness']['reason']}")
@@ -511,7 +551,7 @@ def main(argv: list[str]) -> int:
         add_hit(flags, "T3", "head", f"no CI and no test run reported on head {head7}")
 
     out = {
-        "pr": {"repo": (bundle / "repo.txt").read_text().strip() if (bundle / "repo.txt").exists() else "",
+        "pr": {"repo": repo,
                "number": pr.get("number"), "title": pr.get("title"), "url": pr.get("url"), "state": pr.get("state"),
                "draft": pr.get("isDraft"), "author": (pr.get("author") or {}).get("login"), "head": pr["headRefOid"],
                "additions": pr.get("additions"), "deletions": pr.get("deletions")},

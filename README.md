@@ -129,7 +129,7 @@ Agentic review and CI already ran on the PR, but the merge still waits for a hum
 
 ```
 /cr-double-check https://github.com/owner/repo/pull/123 owner/other#45   # explicit PRs, any repository
-/cr-double-check --search "org:owner author:someone"                     # open PRs matching a gh search
+/cr-double-check --search org:owner author:someone                       # open PRs matching a gh search
 /cr-double-check                                                          # open PRs where your review is requested
 /cr-double-check owner/repo#123 --comment                                 # also post the verdict on the PR
 ```
@@ -138,7 +138,7 @@ For each PR it reads the full diff, the description, every agentic review commen
 Then it gives **one verdict**, in Portuguese:
 
 - **✅ Aprovar direto** - with the reason in 1-2 lines (docs only, tests only, a local change the current review covers with no open finding and a green suite, a mechanical change).
-- **🙋 Precisa de você** - with each point as `file:line` and the concrete question to answer.
+- **🙋 Precisa de você** - with each question as one sentence, a short `file:line` link and two named choices (`Responda: confirmado / espera produto`), and the action to take first when the review is outdated by a delta that matters.
 
 It ends with a grouped summary (both lists, with links) and writes everything under `/tmp/cr-double-check/<timestamp>/`.
 It is read-only: no clone, no checkout, and the only write to GitHub is the `--comment` post, which edits its own previous comment instead of piling up.
@@ -152,20 +152,25 @@ In doubt, the verdict is "Precisa de você".
 | Group | What it means | Examples |
 |---|---|---|
 | **H** - always human | behavior you sign off on however clean the review is | production data writes, migrations, permissions and tenant isolation, money, personal data (LGPD), contracts between systems, new dependencies, CI/deploy and cross-cutting changes, irreversible external effects |
-| **R** - the review does not cover the head | the review is missing, stale or left something open | no trusted review, commits after it that no fix-pass reply names, a force-push, an open finding, a verification gap in a critical area, a skipped lens whose trigger is in the diff |
+| **R** - the review does not cover the head | the review is missing, left something open, or is outdated by a delta that matters | no trusted review, a delta the skill judges relevant (it then recommends a CR on the delta or on the whole PR), an open finding, a verification gap in a critical area, a skipped lens whose trigger is in the diff |
 | **T** - CI and tests | the change was not proven to work | red or pending CI, new logic with no test, no CI and no reported test run on the head |
 | **B** - the double-check's own reading | something the review did not discuss | a concrete bug with a failure scenario, a diff that does more than its description |
 | **D** - cannot determine | a rule could not be evaluated | the diff could not be read; nothing justifies approval |
 | **A** - approve directly | why approving is safe, required when nothing above matched | docs only, tests only, covered by the current review, mechanical change |
 
-Part of the rules are **gates**, decided mechanically by `scripts/signals.py` from the PR data (a migration path, a red check, a commit after the review, an untrusted review author); a gate cannot be argued away.
+Part of the rules are **gates**, decided mechanically by `scripts/signals.py` from the PR data (a migration path, a red check, an open finding with no reply, no trusted review); a gate cannot be argued away.
 The rest are **judgment**: the script raises *flags* (a money or permission keyword in a changed line, a gap in the review), and the agent confirms each one against the hunk or dismisses it with a one-line reason that goes into the verdict.
 
-A review comment counts only from someone with write access to the repository, the `gh` user running the check, or a login listed in `references/trusted-reviewers.txt`; anything else that looks like a review is reported as ignored.
+A review comment counts only from the `gh` user running the check, a login listed in `references/trusted-reviewers.txt`, or an author whose association with the repository is OWNER, MEMBER or COLLABORATOR (a member who authors the PR included); a review-looking comment from an outside contributor is reported as ignored.
+
+When the review is outdated, the skill does not hand the question to you: `scripts/delta.py` lists what changed after it, and the agent decides whether that delta is covered (same pattern already reviewed, small, tested) or whether the CR should run again on the delta or on the whole PR, and says why.
 
 ### Tests
 
-`python3 tests/run_fixtures.py` runs the signal script over synthetic PRs in `tests/fixtures/` that cover both verdicts: a docs-only PR, a change covered by a fix pass, a stale review, a data fix deleting rows under three clean review rounds, a migration with red CI, an open finding, a fake review from an outsider, a review pinned to an old SHA, new and major dependencies, a force-push, a Portuguese review with a PLAUSIBLE HIGH, a CI workflow change and an unreadable diff.
+`python3 tests/run_fixtures.py` runs the signal script over synthetic PRs in `tests/fixtures/` that cover both verdicts.
+Approve: a docs-only PR, a change covered by a fix pass, an outdated review whose delta only touches the README, a covered change under `docs/conf.py` (code, never docs-only).
+Needs you: an outdated review, a data fix deleting rows under three clean review rounds, a migration with red CI, an open finding, a fake review from an outsider, a review pinned to an old SHA, a commit created before the review but pushed after it, new and major dependencies, a force-push, a Portuguese review with a PLAUSIBLE HIGH, a CI workflow change and an unreadable diff.
+It also checks how `collect.sh` reads a PR link (an anchor such as `#issuecomment-…` never joins the number), how files are categorized, and that the diff parser does not mistake a removed `-- comment` line for a file header.
 The fixtures are written by `tests/build_fixtures.py`; CI runs the suite on every PR.
 
 ---

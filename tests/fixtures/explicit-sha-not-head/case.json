@@ -1,5 +1,5 @@
 {
-  "about": "A /code-review style comment prints the SHA it reviewed and the head moved on: R2 by SHA.",
+  "about": "A /code-review style comment prints the SHA it reviewed and the head moved on: R2 flag, staleness by SHA. The delta adds logic nobody reviewed: 'rodar o CR no delta'.",
   "viewer": "reviewer-bot",
   "repo": "acme/shop",
   "pr": {
@@ -64,9 +64,11 @@
   "events": [],
   "expected": {
     "verdict": "precisa",
-    "gates": [
+    "gates": [],
+    "flags_include": [
       "R2"
     ],
-    "review_method": "sha"
+    "review_method": "sha",
+    "sha_source": "printed"
   }
 }

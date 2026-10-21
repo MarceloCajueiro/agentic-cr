@@ -9,31 +9,41 @@
 #   repo.txt      owner/repo
 #
 # Usage: collect.sh <pr-ref> <bundle-dir>
-#   <pr-ref>: https://github.com/owner/repo/pull/123 | owner/repo#123 | 123 (repo of the cwd)
+#        collect.sh --resolve <pr-ref>   prints "owner/repo number" and exits, no network
+#                                        for a full ref (what tests/run_fixtures.py checks)
+#   <pr-ref>: https://github.com/owner/repo/pull/123[/files|#anchor|?query]
+#             | owner/repo#123 | 123 (repository of the current directory)
 set -euo pipefail
+
+# Only the digits right after /pull/ are the number: a link copied from a comment
+# notification ends in #issuecomment-<id>, whose digits must never join it.
+resolve() {
+  local ref="$1"
+  if [[ "$ref" =~ ^https?://(www\.)?github\.com/([^/]+/[^/#?]+)/pull/([0-9]+)([/#?].*)?$ ]]; then
+    repo="${BASH_REMATCH[2]}"
+    num="${BASH_REMATCH[3]}"
+  elif [[ "$ref" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$ ]]; then
+    repo="${BASH_REMATCH[1]}"
+    num="${BASH_REMATCH[2]}"
+  elif [[ "$ref" =~ ^#?([0-9]+)$ ]]; then
+    repo=""
+    num="${BASH_REMATCH[1]}"
+  else
+    echo "collect: could not read a PR reference from '$ref'" >&2
+    return 1
+  fi
+}
+
+if [ "${1:-}" = "--resolve" ]; then
+  resolve "${2:?usage: collect.sh --resolve <pr-ref>}"
+  printf '%s %s\n' "${repo:-.}" "$num"
+  exit 0
+fi
 
 ref="${1:?usage: collect.sh <pr-ref> <bundle-dir>}"
 out="${2:?usage: collect.sh <pr-ref> <bundle-dir>}"
-
-case "$ref" in
-  https://github.com/*/pull/*)
-    path="${ref#https://github.com/}"
-    repo="$(printf '%s' "$path" | cut -d/ -f1-2)"
-    num="$(printf '%s' "$path" | cut -d/ -f4 | tr -cd '0-9')"
-    ;;
-  */*#*)
-    repo="${ref%%#*}"
-    num="${ref##*#}"
-    ;;
-  *)
-    repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-    num="$ref"
-    ;;
-esac
-
-case "$num" in
-  ''|*[!0-9]*) echo "collect: could not read a PR number from '$ref'" >&2; exit 1 ;;
-esac
+resolve "$ref"
+[ -n "$repo" ] || repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 
 mkdir -p "$out"
 printf '%s\n' "$repo" > "$out/repo.txt"

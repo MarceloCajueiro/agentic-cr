@@ -1,6 +1,8 @@
-# GitHub logins whose agentic review comments cr-double-check counts as reviews.
-# The gh login running the check is always trusted; list here the bots that post
-# /cr, /sas-cr, /code-review or "Revisão crítica" comments for you, one per line.
-# A review-looking comment from anyone else is reported as ignored, never counted:
-# otherwise a PR author could paste a fake "no findings" review.
+# GitHub logins whose agentic review comments cr-double-check counts as reviews,
+# in addition to the ones it always trusts: the gh login running the check and anyone
+# whose association with the repository is OWNER, MEMBER or COLLABORATOR (which includes
+# a PR author who is a member). List here the bots that post /cr, /sas-cr, /code-review
+# or "Revisão crítica" comments without such an association, one login per line.
+# A review-looking comment from anyone else (an outside contributor) is reported as
+# ignored, never counted, so an outsider cannot paste a fake "no findings" review.
 portabilis-fabrica-ai

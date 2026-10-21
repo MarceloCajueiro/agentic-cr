@@ -1,5 +1,5 @@
 {
-  "about": "A commit lands after the fix-pass reply and no reply names it: R2.",
+  "about": "A commit lands after the fix-pass reply and no reply names it: R2 flag. The delta changes cart logic with no test, so the judgment is 'rodar o CR no delta'.",
   "viewer": "reviewer-bot",
   "repo": "acme/shop",
   "pr": {
@@ -78,7 +78,8 @@
   "events": [],
   "expected": {
     "verdict": "precisa",
-    "gates": [
+    "gates": [],
+    "flags_include": [
       "R2"
     ],
     "reviews_current": false

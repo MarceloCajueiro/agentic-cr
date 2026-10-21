@@ -78,14 +78,15 @@ write("approve-covered-by-fix-pass",
        "reviews_current": True})
 
 write("stale-commit-after-fix-reply",
-      "A commit lands after the fix-pass reply and no reply names it: R2.",
+      "A commit lands after the fix-pass reply and no reply names it: R2 flag. The delta changes cart logic with no test, "
+      "so the judgment is 'rodar o CR no delta'.",
       pr(["app/models/cart.rb", "spec/models/cart_spec.rb"],
          [commit(C1, T0, "feat: cart total"), commit(C2, T2, "fix: apply code review findings"), commit(HEAD, T4, "fix: one more tweak")],
          [comment(cr_comment([("💡", "Comment is stale", "app/models/cart.rb:9", "CONFIRMED")]), T1, cid=1),
           comment(f"Applied: finding 1 in {C2[:8]}. Not applied: none.", T3, cid=2)],
          green),
       logic,
-      {"verdict": "precisa", "gates": ["R2"], "reviews_current": False})
+      {"verdict": "precisa", "gates": [], "flags_include": ["R2"], "reviews_current": False})
 
 write("production-data-delete",
       "A data fix that deletes rows, with three clean review rounds: H1 holds anyway.",
@@ -118,12 +119,13 @@ write("untrusted-fake-review",
       {"verdict": "precisa", "gates": ["R1"], "ignored": 1})
 
 write("explicit-sha-not-head",
-      "A /code-review style comment prints the SHA it reviewed and the head moved on: R2 by SHA.",
+      "A /code-review style comment prints the SHA it reviewed and the head moved on: R2 flag, staleness by SHA. "
+      "The delta adds logic nobody reviewed: 'rodar o CR no delta'.",
       pr(["app/models/cart.rb", "spec/models/cart_spec.rb"], [commit(C1, T0, "feat: cart total"), commit(HEAD, T0, "feat: more")],
          [comment(f"## Code review - acme/shop#7\n\n- **PR:** acme/shop#7\n- **SHA:** `{C1}`\n\n## Índice\n\n| # | Sev | Finding | Onde | Veredito |\n|---|---|---|---|---|\n\nNenhum finding.\n", T1)],
          green),
       logic,
-      {"verdict": "precisa", "gates": ["R2"], "review_method": "sha"})
+      {"verdict": "precisa", "gates": [], "flags_include": ["R2"], "review_method": "sha", "sha_source": "printed"})
 
 write("new-and-major-dependency",
       "A new package and a major bump in package.json: H7 twice; a minor bump stays a flag.",
@@ -133,10 +135,11 @@ write("new-and-major-dependency",
       {"verdict": "precisa", "gates": ["H7"], "flags_include": ["H7"], "dependency_gates": 2})
 
 write("force-push-after-review",
-      "Same commits by date, but a force-push came after the review: R2.",
+      "Same commits by date, but a force-push came after the review: R2 flag. The rewritten commits cannot be compared, "
+      "so the judgment is 'rodar o CR inteiro'.",
       pr(["app/models/cart.rb", "spec/models/cart_spec.rb"], [commit(HEAD, T0, "feat: cart total")], [comment(cr_comment(), T1)], green),
       logic,
-      {"verdict": "precisa", "gates": ["R2"]},
+      {"verdict": "precisa", "gates": [], "flags_include": ["R2"]},
       events=[{"event": "head_ref_force_pushed", "created_at": T2, "actor": "dev"}])
 
 write("portuguese-plausible-high",
@@ -159,3 +162,32 @@ write("diff-unavailable",
       pr(["app/models/cart.rb"], [commit(HEAD, T0, "feat: big change")], [comment(cr_comment(), T1)], green),
       "",
       {"verdict": "precisa", "gates": ["D1"]})
+
+write("commit-pushed-after-review-by-links",
+      "A /cr comment with no printed SHA links its finding to the reviewed commit; the head is a commit created before the "
+      "review but pushed after it. Dates alone would call the review current; the links show it is not: R2 flag.",
+      pr(["app/models/cart.rb", "spec/models/cart_spec.rb"],
+         [commit(C1, T0, "feat: cart total"), commit(HEAD, T0, "feat: more, pushed later")],
+         [comment(cr_comment([("💡", "Comment is stale", "app/models/cart.rb:9", "CONFIRMED")]).replace(
+              "### Index", f"[`app/models/cart.rb:9`](https://github.com/acme/shop/blob/{C1}/app/models/cart.rb#L9)\n\n### Index"), T1, cid=1),
+          comment(f"Applied: none. Not applied: finding 1 - the comment is accurate after {C1[:8]}.", T2, cid=2)],
+         green),
+      logic,
+      {"verdict": "precisa", "gates": [], "flags_include": ["R2"], "reviews_current": False, "sha_source": "links"})
+
+write("stale-review-docs-only-delta",
+      "The review is outdated by one commit that only touches the README: R2 flag, but the judgment is 'coberto' and the "
+      "covered local change is A3.",
+      pr(["app/models/cart.rb", "spec/models/cart_spec.rb", "README.md"],
+         [commit(C1, T0, "feat: cart total"), commit(HEAD, T2, "docs: mention the cart total")],
+         [comment(cr_comment(), T1, cid=1), comment(f"Tests: 42 examples, 0 failures on {HEAD[:7]}.", T3, cid=2)],
+         green),
+      logic + diff_file("README.md", ["The cart shows its total."], start=8),
+      {"verdict": "aprovar", "rule": "A3", "gates": [], "flags_include": ["R2"], "reviews_current": False})
+
+write("docs-dir-executable",
+      "A PR that only changes docs/conf.py runs at build time: it is code, never docs-only (A1), so it can only reach "
+      "'Aprovar direto' as a covered change (A3).",
+      pr(["docs/conf.py"], [commit(HEAD, T0, "docs: switch the theme")], [comment(cr_comment(), T1)], green),
+      diff_file("docs/conf.py", ["html_theme = 'furo'"], removed=["html_theme = 'alabaster'"], start=20),
+      {"verdict": "aprovar", "rule": "A3", "gates": [], "flags_include": ["T2"], "bucket": "code"})

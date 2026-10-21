@@ -1,5 +1,5 @@
 {
-  "about": "Same commits by date, but a force-push came after the review: R2.",
+  "about": "Same commits by date, but a force-push came after the review: R2 flag. The rewritten commits cannot be compared, so the judgment is 'rodar o CR inteiro'.",
   "viewer": "reviewer-bot",
   "repo": "acme/shop",
   "pr": {
@@ -65,7 +65,8 @@
   ],
   "expected": {
     "verdict": "precisa",
-    "gates": [
+    "gates": [],
+    "flags_include": [
       "R2"
     ]
   }

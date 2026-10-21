@@ -1,7 +1,7 @@
 # cr-double-check criteria
 
 These rules decide every verdict.
-A verdict names the rule IDs that produced it, so anyone can rerun the check and land on the same answer, or point at the rule that is wrong.
+A verdict records the rule IDs that produced it (in its folded audit line), so anyone can rerun the check and land on the same answer, or point at the rule that is wrong.
 
 There are two verdicts and nothing in between:
 
@@ -21,7 +21,8 @@ Each rule is marked **gate** or **judgment**:
   A flag is a lead to read, not a verdict: confirm it in the hunk or dismiss it with a one-line reason.
 
 The point of the double-check is that human review stops being a bottleneck.
-A "Precisa de você" must therefore carry an exact location (`file:line`) and a concrete question the captain can answer in a minute, never a generic "please take a look".
+A "Precisa de você" must therefore carry an exact location (`file:line`) and a concrete question the captain can answer in a minute, ending in two named choices, never a generic "please take a look".
+What the double-check can settle by reading, it settles: it never hands the captain a question it could answer itself (an outdated review is the main case, see R2).
 
 ---
 
@@ -55,9 +56,8 @@ How to judge an H flag:
 
 | ID | Name | Matches when | Kind |
 |---|---|---|---|
-| R1 | Sem review agêntico | no review comment from a trusted author (`references/trusted-reviewers.txt` plus the gh login running the check) | gate |
-| R2 | Review desatualizado | the latest review does not cover the head commit: the reviewed SHA it prints differs from the head, or (when it prints none) there are commits after it that no fix-pass reply names, or a force-push came after it | gate |
-| R2 | (fix-pass delta) | commits after the review that a fix-pass reply names are code nobody reviewed: read them; if they do more than the reply says, or touch an H area, R2 matches | judgment |
+| R1 | Sem review agêntico | no review comment from a trusted author (see *Who counts as a reviewer* below) | gate |
+| R2 | Review desatualizado, delta relevante | the latest review does not cover the head (`signals.py` flags it: the reviewed SHA differs from the head, or commits came after it, or a force-push did) **and** your judgment of that delta, below, ends in "rodar o CR de novo" | judgment |
 | R3 | Achado aberto | a CONFIRMED or PLAUSIBLE finding of any severity that no later reply marks as applied or justifies; gate when there is no fix-pass reply at all | gate / judgment |
 | R4 | Lacuna em área crítica | a HIGH or CRITICAL finding left as PLAUSIBLE, or a *Verification gaps* item, that concerns an H area or the main logic of the PR | judgment |
 | R5 | Lente pulada com gatilho | the review's *Not run* list skipped or cut a lens whose trigger is in the diff (data layer skipped with a migration present, test analyzer skipped with new logic, boundary guard skipped with a permission change) | judgment |
@@ -65,11 +65,35 @@ How to judge an H flag:
 Notes:
 
 - **Who counts as a reviewer.** A comment counts as a review by its body signature (the `/cr` header and footer, the `/sas-cr` header, `Code review - ...`, `Revisão crítica - ...`) **and** a trusted author.
-  A review-looking comment from anyone else is listed as ignored: a PR author could otherwise paste a fake "no findings" review.
+  Trusted means: the `gh` user running the check, a login in `references/trusted-reviewers.txt`, or a comment author whose GitHub association with the repository is OWNER, MEMBER (member of the owning organization) or COLLABORATOR.
+  A review-looking comment from anyone else (an outside contributor) is listed as ignored, so an outsider cannot paste a fake "no findings" review.
+  A member who authors the PR is trusted like any other member: the protection is against outsiders, not against the team.
 - **Several rounds and several reviewers.** Only the latest round of each kind counts.
-  R2 is a gate on the most recent review overall; an older kind that does not cover the head is a flag (a review that ran once at the start and was superseded is common and is not by itself a reason to stop).
-- **A stale review with a harmless delta.** When R2 matches but every commit after the review only touches docs or tests (rule A1 or A2 applied to the delta alone, checked with `gh api repos/<repo>/compare/<base>...<head>`), R2 does not hold.
-  A merge from the base branch never qualifies: it brings code the review did not see.
+  R2 looks at the most recent review overall; an older kind that does not cover the head is only context (a review that ran once at the start and was superseded is common and is not by itself a reason to stop).
+- **How the reviewed commit is known.** Exactly, when the review prints its SHA (`/sas-cr`, `/code-review`, *Revisão crítica*) or links its findings to `blob/<sha>/` (`/cr` with findings).
+  Otherwise only by dates: a commit counts as reviewed when it was created before the comment.
+  That is weaker, because a commit created before the review and pushed after it looks reviewed; the verdict says which method was used (`sha_source` in `signals.json`).
+
+### Judging the delta after the review (R2)
+
+When the review does not cover the head, **you decide** whether the change since then needs a new review; you do not hand that question to the captain.
+Run `scripts/delta.py` on the bundle: it lists every commit after the review (unreviewed and fix-pass) with its files and line counts, and for a merge, which files the review had seen.
+Read those commits' diffs, then pick one of three outcomes and write its reason in one line:
+
+1. **Coberto** - no point, it goes in the covered part of the verdict.
+   All of these hold:
+   - the delta is small next to the reviewed change (a guide: at most about a third of the reviewed diff, and at most about 80 changed lines of code);
+   - it repeats a pattern the review already checked, or applies the review's own findings and does no more than the reply says;
+   - it touches no H area the review did not already cover;
+   - each behavior change has a test in the delta, or is exercised by a suite reported green on the head;
+   - a merge from the base branch changed none of the files the review saw (`touches_reviewed_files` empty), or only lines the PR does not change.
+   A delta of only docs or tests is always "coberto".
+2. **Rodar o CR no delta** - the delta adds logic the review did not see but stays within the nature of the PR (same area, same kind of change).
+   The point recommends a CR round focused on `<reviewed>..<head>`, naming the files, and why.
+3. **Rodar o CR inteiro** - the delta changes the nature of the PR: a new H area, a new feature or module, a rewrite of logic the review checked, a delta larger than what was reviewed, a merge that changed files the review saw, or a force-push whose old commits cannot be compared.
+   The point recommends a full new CR, and why.
+
+Outcomes 2 and 3 are a "Precisa de você" point whose answer is an action (trigger the CR, or overrule the recommendation), not an open question.
 - **Applied or justified.** A finding is closed when a later trusted reply says it was applied (and the commit exists in the PR) or explains why it was not (false positive, out of scope, accepted trade-off).
   A finding that is simply not mentioned is open.
 
@@ -123,10 +147,10 @@ Style, naming and refactor suggestions never produce a "Precisa de você".
 |---|---|---|
 | A1 | Só documentação | every changed file is documentation (agent and prompt definitions do **not** count: they change behavior) |
 | A2 | Só testes | every changed file is a test or a test fixture, and CI (or a reported run) is green |
-| A3 | Coberto pelo review | the change is local (no H area), the latest review covers the head with no open finding, and CI is green or a trusted reply reports the suite passing on the head |
+| A3 | Coberto pelo review | the change is local (no H area), the latest review covers the head (or the delta after it was judged "coberto") with no open finding, and CI is green or a trusted reply reports the suite passing on the head |
 | A4 | Mecânica | a mechanical change with identical behavior (rename, formatting, a minor or patch bump of an existing dependency) and CI green |
 
-The "porquê" of an "Aprovar direto" is 1-2 lines: which A rule, and the evidence (review round and SHA, CI or suite result).
+The "porquê" of an "Aprovar direto" is one sentence in plain language (what changes and what shows it is right); the A rule and the evidence (review round and SHA, CI or suite result) go in its folded audit lines.
 
 ---
 
