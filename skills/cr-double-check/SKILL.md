@@ -150,7 +150,7 @@ As perguntas abaixo serão refeitas depois do novo review.
 </details>
 ```
 
-The `Antes:` lines appear only when the delta was judged "rodar o CR"; the second one only for "no PR inteiro".
+The `Antes:` lines appear only when the delta was judged "rodar o CR", or when the PR has no trusted review at all (R1), which is always `Antes: rode o CR no PR inteiro. <por quê>`; the second line only for "no PR inteiro".
 "Como verificar" appears only when there is a quick check.
 "Mudou depois do review" appears only when the review was outdated and the delta was judged "coberto".
 Empty lines and an empty `<details>` are omitted.
