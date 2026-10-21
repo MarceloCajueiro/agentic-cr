@@ -1,7 +1,7 @@
 # cr-double-check criteria
 
 These rules decide every verdict.
-A verdict records the rule IDs that produced it (in its folded audit line), so anyone can rerun the check and land on the same answer, or point at the rule that is wrong.
+A verdict records the rule IDs that produced it (in the detail file, never in the terminal), so anyone can rerun the check and land on the same answer, or point at the rule that is wrong.
 
 There are two verdicts and nothing in between:
 
@@ -151,7 +151,7 @@ Style, naming and refactor suggestions never produce a "Precisa de você".
 | A3 | Coberto pelo review | the change is local (no H area), the latest review covers the head (or the delta after it was judged "coberto") with no open finding, and CI is green or a trusted reply reports the suite passing on the head |
 | A4 | Mecânica | a mechanical change with identical behavior (rename, formatting, a minor or patch bump of an existing dependency) and CI green |
 
-The "porquê" of an "Aprovar direto" is one sentence in plain language (what changes and what shows it is right); the A rule and the evidence (review round and SHA, CI or suite result) go in its folded audit lines.
+The "porquê" of an "Aprovar direto" is one sentence in plain language (what changes and what shows it is right); the A rule and the evidence (review round and SHA, CI or suite result) go in its detail file.
 
 ---
 

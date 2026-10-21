@@ -10,8 +10,9 @@ The runner writes the case as the bundle collect.sh would, runs signals.py on it
   bucket, ci, ...   the other expected fields, when present
 
 It also runs a few unit checks on the pieces a fixture cannot reach: how collect.sh reads a
-PR reference (no network), how a file is categorized, and how the diff parser handles a
-removed line that looks like a file header.
+PR reference (no network), how a file is categorized, how the diff parser handles a
+removed line that looks like a file header, and that lint_terminal.py accepts a clean
+terminal summary and rejects each thing a terminal cannot render.
 
 The verdict of a judgment case is the documented answer the skill must reach by reading;
 the runner cannot execute that reading, so it checks that the gates do not contradict it.
@@ -29,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "cr-double-check" / "scripts"
 SIGNALS = SCRIPTS / "signals.py"
 COLLECT = SCRIPTS / "collect.sh"
+LINT = SCRIPTS / "lint_terminal.py"
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
@@ -105,8 +107,42 @@ HEADER_LOOKALIKE_DIFF = (
 )
 
 
+GOOD_TERMINAL = """## cr-double-check 01/10 - você decide 1 PR (1 pergunta) · 1 para aprovar direto
+
+### 🙋 shop#7 - Total do carrinho - https://github.com/acme/shop/pull/7
+- **A limpeza deve apagar pedidos de qualquer status?**
+  - Por quê: `jobs/cleanup.rb:12` não filtra o status.
+  - Responda: **só cancelados, ajustar** / **qualquer status, intencional**
+- **Coberto:** delta depois do review, achado do CR aplicado
+
+### ✅ Aprovar direto (1)
+- ✅ **shop#8** - Texto do botão - só muda um texto, review cobre o head - https://github.com/acme/shop/pull/8
+
+Detalhe completo: /home/u/.cache/cr-double-check/20261001-100000/detalhe.md
+- shop#7: /home/u/.cache/cr-double-check/20261001-100000/acme-shop-7/detalhe.md
+"""
+BAD_TERMINAL = {
+    "html": GOOD_TERMINAL.replace("- **Coberto:**", "<details>\n- **Coberto:**"),
+    "markdown link": GOOD_TERMINAL.replace("`jobs/cleanup.rb:12`", "[cleanup.rb:12](https://github.com/acme/shop/blob/abc/jobs/cleanup.rb#L12)"),
+    "url mid-text": GOOD_TERMINAL.replace("não filtra o status.", "não filtra o status (https://github.com/acme/shop/pull/7)."),
+    "rule code": GOOD_TERMINAL.replace("Por quê:", "Por quê (H1):"),
+    "relative detail path": GOOD_TERMINAL.replace("Detalhe completo: /home/u/", "Detalhe completo: ~/"),
+    "oversized block": GOOD_TERMINAL.replace("- **Coberto:**", "  - O review tinha uma lacuna.\n- **Coberto:**"),
+}
+
+
 def run_units() -> list[str]:
     problems = []
+    with tempfile.TemporaryDirectory() as tmp:
+        sample = Path(tmp) / "terminal.md"
+        sample.write_text(GOOD_TERMINAL, encoding="utf-8")
+        out = subprocess.run([sys.executable, str(LINT), str(sample)], capture_output=True, text=True)
+        if out.returncode != 0:
+            problems.append(f"lint_terminal.py rejected a clean summary: {out.stdout.strip()}")
+        for name, text in BAD_TERMINAL.items():
+            sample.write_text(text, encoding="utf-8")
+            if subprocess.run([sys.executable, str(LINT), str(sample)], capture_output=True).returncode == 0:
+                problems.append(f"lint_terminal.py accepted a summary with: {name}")
     for ref, want in RESOLVE_CASES.items():
         got = subprocess.run(["bash", str(COLLECT), "--resolve", ref], capture_output=True, text=True).stdout.strip()
         if got != want:
