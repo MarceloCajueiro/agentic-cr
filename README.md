@@ -8,6 +8,8 @@ Everything runs **in one agent, sequentially** - no subagents, no `Workflow`, no
 
 Nothing in it is tied to a language, a framework or a repository: each lens reads the reviewed project's own conventions before judging anything.
 
+The repo ships a second skill, **[`/cr-double-check`](#cr-double-check---what-still-needs-a-human)**, for the step after the review: given PRs that already carry agentic review comments and CI, it tells you which ones really need your approval (with `file:line` and the question to answer) and which can be approved directly, by documented and auditable criteria.
+
 - 🎯 **Triage before the passes** - a lens with nothing to do on this diff does not run, and the skip is reported
 - 🔬 **Refutation by execution** - a mandatory *Refutation attempt* per finding; no CONFIRMED without a probe whose output decides
 - 🚫 **No invented rules** - a citation must come from the reviewed project's own docs, or the finding stands on evidence alone
@@ -69,6 +71,8 @@ with the provenance recorded in each file.
 
 That is the whole list. No subagent support, no plugin, no runtime to boot for the review itself.
 
+`/cr-double-check` needs `gh`, `bash` and `python3` (standard library only), and no checkout at all: it reads every PR through the API, from any directory.
+
 ---
 
 ## Install
@@ -86,11 +90,15 @@ The [skills.sh](https://skills.sh) CLI installs into the right directory for eac
 lens definitions and its `lens-dir.sh` resolver with it, and there is nothing else to install. Invoke it as
 `/cr` in Claude Code, `/skill:cr` in pi.
 
+The repo holds two skills, `cr` and `cr-double-check`; the interactive install lists both, and `--list`
+shows them. `cr-double-check` carries its criteria and scripts the same way.
+
 ### Manual
 
 ```bash
 git clone https://github.com/MarceloCajueiro/agentic-cr
 cp -r agentic-cr/skills/cr ~/.agents/skills/   # or .pi/skills, .claude/skills, ...
+cp -r agentic-cr/skills/cr-double-check ~/.agents/skills/
 ```
 
 ---
@@ -111,6 +119,60 @@ comment and stops. Applying the findings is the PR owner's decision; `--fix` is 
 
 The full report is written to `/tmp/cr/<owner>-<repo>/cr_<PR>.md` - the audit artifact, with no verbosity
 limit. The PR gets the readable version.
+
+---
+
+## /cr-double-check - what still needs a human
+
+Agentic review and CI already ran on the PR, but the merge still waits for a human.
+`/cr-double-check` decides, PR by PR, whether that approval is a formality or a real decision, so human review stops being the bottleneck.
+
+```
+/cr-double-check https://github.com/owner/repo/pull/123 owner/other#45   # explicit PRs, any repository
+/cr-double-check --search org:owner author:someone                       # open PRs matching a gh search
+/cr-double-check                                                          # open PRs where your review is requested
+/cr-double-check owner/repo#123 --comment                                 # also post the verdict on the PR
+```
+
+For each PR it reads the full diff, the description, every agentic review comment (`/cr`, `/sas-cr`, `/code-review`, *Revisão crítica*) with its fix-pass replies, the CI state, and what changed after the last review.
+Then it gives **one verdict**, in Portuguese:
+
+- **✅ Aprovar direto** - with the reason in 1-2 lines (docs only, tests only, a local change the current review covers with no open finding and a green suite, a mechanical change).
+- **🙋 Precisa de você** - with each question as one sentence, a short `file:line` link and two named choices (`Responda: confirmado / espera produto`), and the action to take first when the review is outdated by a delta that matters.
+
+The result is made for the terminal: no HTML, no long links, no rule codes, about 6 lines per PR (the question, why, and `Responda: a / b`), and `scripts/lint_terminal.py` checks that before anything is printed.
+Everything else (review and CI context, the delta judgment, what was covered and dismissed, the rule IDs) goes to Markdown files under `~/.cache/cr-double-check/<timestamp>/`, one per PR with short-label links and each fact written once, plus an index when the run has several PRs; one absolute path closes the output (the PR's file, or the index).
+It is read-only: no clone, no checkout, and the only write to GitHub is the `--comment` post, which edits its own previous comment instead of piling up.
+**It never approves and never merges a PR.**
+
+### The criteria
+
+The rules are written in [`skills/cr-double-check/references/criteria.md`](skills/cr-double-check/references/criteria.md), each with an ID that every verdict cites, so a verdict can be audited and reproduced.
+In doubt, the verdict is "Precisa de você".
+
+| Group | What it means | Examples |
+|---|---|---|
+| **H** - always human | behavior you sign off on however clean the review is | production data writes, migrations, permissions and tenant isolation, money, personal data (LGPD), contracts between systems, new dependencies, CI/deploy and cross-cutting changes, irreversible external effects |
+| **R** - the review does not cover the head | the review is missing, left something open, or is outdated by a delta that matters | no trusted review, a delta the skill judges relevant (it then recommends a CR on the delta or on the whole PR), an open finding, a verification gap in a critical area, a skipped lens whose trigger is in the diff |
+| **T** - CI and tests | the change was not proven to work | red or pending CI, new logic with no test, no CI and no reported test run on the head |
+| **B** - the double-check's own reading | something the review did not discuss | a concrete bug with a failure scenario, a diff that does more than its description |
+| **D** - cannot determine | a rule could not be evaluated | the diff could not be read; nothing justifies approval |
+| **A** - approve directly | why approving is safe, required when nothing above matched | docs only, tests only, covered by the current review, mechanical change |
+
+Part of the rules are **gates**, decided mechanically by `scripts/signals.py` from the PR data (a migration path, a red check, an open finding with no reply, no trusted review); a gate cannot be argued away.
+The rest are **judgment**: the script raises *flags* (a money or permission keyword in a changed line, a gap in the review), and the agent confirms each one against the hunk or dismisses it with a one-line reason that goes into the verdict.
+
+A review comment counts only from the `gh` user running the check, a login listed in `references/trusted-reviewers.txt`, in `~/.config/cr-double-check/trusted-reviewers.txt` or in `CR_DOUBLE_CHECK_TRUSTED` (where a team's own review bots go), or an author whose association with the repository is OWNER, MEMBER or COLLABORATOR (a member who authors the PR included); a review-looking comment from an outside contributor is reported as ignored.
+
+When the review is outdated, the skill does not hand the question to you: `scripts/delta.py` lists what changed after it, and the agent decides whether that delta is covered (same pattern already reviewed, small, tested) or whether the CR should run again on the delta or on the whole PR, and says why.
+
+### Tests
+
+`python3 tests/run_fixtures.py` runs the signal script over synthetic PRs in `tests/fixtures/` that cover both verdicts.
+Approve: a docs-only PR, a change covered by a fix pass, an outdated review whose delta only touches the README, a covered change under `docs/conf.py` (code, never docs-only).
+Needs you: an outdated review, a data fix deleting rows under three clean review rounds, a migration with red CI, an open finding, a fake review from an outsider, a review pinned to an old SHA, a commit created before the review but pushed after it, new and major dependencies, a force-push, a Portuguese review with a PLAUSIBLE HIGH, a CI workflow change and an unreadable diff.
+It also checks that `lint_terminal.py` accepts a clean terminal summary and rejects each thing a terminal cannot render (HTML, Markdown links, URLs mid-text, rule codes, a relative or repeated path, an oversized PR block), and that a detail file has no raw URL, how `collect.sh` reads a PR link (an anchor such as `#issuecomment-…` never joins the number), how files are categorized, and that the diff parser does not mistake a removed `-- comment` line for a file header.
+The fixtures are written by `tests/build_fixtures.py`; CI runs the suite on every PR.
 
 ---
 
