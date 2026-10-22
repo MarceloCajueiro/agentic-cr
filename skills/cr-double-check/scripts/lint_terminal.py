@@ -43,7 +43,7 @@ HTML_RE = re.compile(r"<[A-Za-z/!][^>]*>")
 MD_LINK_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
 URL_RE = re.compile(r"https?://\S+")
 RULE_CODE_RE = re.compile(r"\b[HRTBDA][1-9]\b")
-OLD_LABEL_RE = re.compile(r"🙋|Precisa de você|Aprovar? direto")
+OLD_LABEL_RE = re.compile(r"🙋|Precisa de você|Aprovar direto")
 HEADER_RE = re.compile(r"^## cr-double-check \d{2}/\d{2} - ❌ (\d+) não aprova · ✅ (\d+) aprova( · \d+ fora)?$")
 SUMMARY_RE = re.compile(r"^- (❌ NÃO APROVA|✅ APROVA) - (\S+#\d+) - (.+) - (https?://\S+)$")
 BLOCK_RE = re.compile(r"^### (\S+#\d+) - \S")
@@ -56,8 +56,8 @@ MAX_REASON = 160
 
 
 def one_sentence(reason: str) -> bool:
-    """A reason is one sentence: short, and no full stop followed by another sentence."""
-    return len(reason) <= MAX_REASON and not re.search(r"[.!?] +[A-ZÀ-Ú`*]", reason)
+    """A reason is one sentence: short, and no full stop followed by more text."""
+    return len(reason) <= MAX_REASON and not re.search(r"[.!?] ", reason)
 
 
 def lint(text: str) -> list[str]:

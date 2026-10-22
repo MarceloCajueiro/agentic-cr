@@ -140,7 +140,7 @@ GOOD_DETAIL = f"""## [shop#7](https://github.com/acme/shop/pull/7) - Total do ca
 
 ❌ NÃO APROVA - {REASON_7}
 
-Head [commit abc1234](https://github.com/acme/shop/commit/abc1234) · CI verde
+Head [commit abc1234](https://github.com/acme/shop/commit/abc1234) · CI verde · aprova direto quando a limpeza filtrar o status
 
 - A limpeza não filtra o status: [cleanup.rb:12](https://github.com/acme/shop/blob/abc1234/jobs/cleanup.rb#L12).
 """
@@ -185,6 +185,12 @@ BAD_TERMINAL = {
                  "- ✅ APROVA - shop#8 - só muda o texto de um botão e o review cobre o head - https://github.com/acme/shop/pull/8\n"
                  f"- ❌ NÃO APROVA - shop#7 - {REASON_7} - https://github.com/acme/shop/pull/7\n"),
     "reason of two sentences": GOOD_TERMINAL.replace(REASON_7, "a limpeza apaga tudo. Ninguém confirmou"),
+    "reason of two lowercase sentences": GOOD_TERMINAL.replace(REASON_7, "a limpeza apaga tudo. ninguém confirmou"),
+    "PR listed twice in the summary": GOOD_TERMINAL.replace("\n\n### shop#7", "\n- ✅ APROVA - shop#8 - de novo - https://github.com/acme/shop/pull/8\n\n### shop#7"),
+    "summary line after a block": GOOD_TERMINAL.replace("- ✅ APROVA - shop#8 - só muda o texto de um botão e o review cobre o head - https://github.com/acme/shop/pull/8\n", "")
+        .replace("\nDetalhe completo:", "### Fora desta rodada (0)\n- ✅ APROVA - shop#8 - só muda o texto de um botão e o review cobre o head - https://github.com/acme/shop/pull/8\n\nDetalhe completo:"),
+    "Coberto before a question": GOOD_TERMINAL.replace("- **Coberto:** delta depois do review, achado do CR aplicado\n", "")
+        .replace("- **A limpeza deve", "- **Coberto:** delta depois do review, achado do CR aplicado\n- **A limpeza deve"),
     "old verdict label": GOOD_TERMINAL.replace("### shop#7 - Total do carrinho", "### 🙋 shop#7 - Total do carrinho"),
     "Para aprovar after a question": GOOD_TERMINAL.replace("- **Coberto:**", "**Para aprovar:** rode o CR no delta - mudou depois.\n- **Coberto:**"),
 }
