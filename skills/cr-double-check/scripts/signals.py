@@ -9,7 +9,7 @@ signals.json next to them (and prints it). Standard library only, no network.
 The output has two kinds of rule hits, both keyed by the rule IDs of
 references/criteria.md:
 
-  gates  decided mechanically - any gate means "Precisa de você", no judgment can lift it
+  gates  decided mechanically - any gate means "NÃO APROVA", no judgment can lift it
   flags  hints the agent must judge by reading the hunk (a word such as "valor" or
          "token" in a changed line is a lead, not a verdict)
 

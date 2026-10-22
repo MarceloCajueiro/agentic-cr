@@ -5,23 +5,23 @@ A verdict records the rule IDs that produced it (in the detail file, never in th
 
 There are two verdicts and nothing in between:
 
-- **Precisa de você** - at least one rule in sections H, R, T, B or D matched.
-- **Aprovar direto** - no rule in H, R, T, B or D matched, AND one rule in section A applies.
+- **NÃO APROVA** - at least one rule in sections H, R, T, B or D matched.
+- **APROVA** - no rule in H, R, T, B or D matched, AND one rule in section A applies.
 
-**In doubt, "Precisa de você".**
-A rule you cannot evaluate (a diff you could not read, a review you could not parse, a file you could not open) is D1, which is "Precisa de você" with the reason attached.
+**In doubt, "NÃO APROVA".**
+A rule you cannot evaluate (a diff you could not read, a review you could not parse, a file you could not open) is D1, which is "NÃO APROVA" with the reason attached.
 Never resolve doubt toward approval.
 
 Each rule is marked **gate** or **judgment**:
 
 - **gate** - `scripts/signals.py` decides it mechanically from the PR data.
-  A gate cannot be lifted by reasoning: if the script reports it, the verdict is "Precisa de você".
+  A gate cannot be lifted by reasoning: if the script reports it, the verdict is "NÃO APROVA".
 - **judgment** - you decide it by reading the diff and the reviews.
   The script may report a *flag* for it (a keyword in a changed line, a path name).
   A flag is a lead to read, not a verdict: confirm it in the hunk or dismiss it with a one-line reason.
 
 The point of the double-check is that human review stops being a bottleneck.
-A "Precisa de você" must therefore carry an exact location (`file:line`) and a concrete question the captain can answer in a minute, ending in two named choices, never a generic "please take a look".
+A "NÃO APROVA" must therefore carry, after the one-sentence reason that opens it, an exact location (`file:line`) and a concrete question the captain can answer in a minute, ending in two named choices, never a generic "please take a look".
 What the double-check can settle by reading, it settles: it never hands the captain a question it could answer itself (an outdated review is the main case, see R2).
 
 ---
@@ -94,7 +94,7 @@ Read those commits' diffs, then pick one of three outcomes and write its reason 
 3. **Rodar o CR inteiro** - the delta changes the nature of the PR: a new H area, a new feature or module, a rewrite of logic the review checked, a delta larger than what was reviewed, a merge that changed files the review saw, or a force-push whose old commits cannot be compared.
    The point recommends a full new CR, and why.
 
-Outcomes 2 and 3 are a "Precisa de você" point whose answer is an action (trigger the CR, or overrule the recommendation), not an open question.
+Outcomes 2 and 3 are a "NÃO APROVA" point whose answer is an action (trigger the CR, or overrule the recommendation), not an open question.
 - **Applied or justified.** A finding is closed when a later trusted reply says it was applied (and the commit exists in the PR) or explains why it was not (false positive, out of scope, accepted trade-off).
   A finding that is simply not mentioned is open.
 
@@ -127,7 +127,7 @@ You are not redoing the review: you are checking that nothing important slipped 
 | B2 | Escopo diferente da descrição | the diff does something the PR description does not mention (a file unrelated to the stated goal, a behavior change sold as a refactor) | judgment |
 
 B1 needs a failure scenario, not a style opinion.
-Style, naming and refactor suggestions never produce a "Precisa de você".
+Style, naming and refactor suggestions never produce a "NÃO APROVA".
 
 ---
 
@@ -142,7 +142,7 @@ Style, naming and refactor suggestions never produce a "Precisa de você".
 
 ## A - Why approving directly is safe
 
-"Aprovar direto" needs **no** match in H, R, T, B or D **and** one of these, named in the verdict:
+"APROVA" needs **no** match in H, R, T, B or D **and** one of these, named in the verdict:
 
 | ID | Name | Applies when |
 |---|---|---|
@@ -151,7 +151,7 @@ Style, naming and refactor suggestions never produce a "Precisa de você".
 | A3 | Coberto pelo review | the change is local (no H area), the latest review covers the head (or the delta after it was judged "coberto") with no open finding, and CI is green or a trusted reply reports the suite passing on the head |
 | A4 | Mecânica | a mechanical change with identical behavior (rename, formatting, a minor or patch bump of an existing dependency) and CI green |
 
-The "porquê" of an "Aprovar direto" is one sentence in plain language (what changes and what shows it is right); the A rule and the evidence (review round and SHA, CI or suite result) go in its detail file.
+The "porquê" of an "APROVA" is one sentence in plain language (what changes and what shows it is right); the A rule and the evidence (review round and SHA, CI or suite result) go in its detail file.
 
 ---
 

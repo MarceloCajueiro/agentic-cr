@@ -8,7 +8,7 @@ Everything runs **in one agent, sequentially** - no subagents, no `Workflow`, no
 
 Nothing in it is tied to a language, a framework or a repository: each lens reads the reviewed project's own conventions before judging anything.
 
-The repo ships a second skill, **[`/cr-double-check`](#cr-double-check---what-still-needs-a-human)**, for the step after the review: given PRs that already carry agentic review comments and CI, it tells you which ones really need your approval (with `file:line` and the question to answer) and which can be approved directly, by documented and auditable criteria.
+The repo ships a second skill, **[`/cr-double-check`](#cr-double-check---what-still-needs-a-human)**, for the step after the review: given PRs that already carry agentic review comments and CI, it says, for each one and before anything else, **APROVA** or **NÃO APROVA** and why in one sentence, then what unblocks a NÃO APROVA (`file:line` and the question to answer, or the action), by documented and auditable criteria.
 
 - 🎯 **Triage before the passes** - a lens with nothing to do on this diff does not run, and the skip is reported
 - 🔬 **Refutation by execution** - a mandatory *Refutation attempt* per finding; no CONFIRMED without a probe whose output decides
@@ -135,12 +135,28 @@ Agentic review and CI already ran on the PR, but the merge still waits for a hum
 ```
 
 For each PR it reads the full diff, the description, every agentic review comment (`/cr`, `/sas-cr`, `/code-review`, *Revisão crítica*) with its fix-pass replies, the CI state, and what changed after the last review.
-Then it gives **one verdict**, in Portuguese:
+Then it gives **one binary verdict**, in Portuguese, always first and always with its reason in one sentence:
 
-- **✅ Aprovar direto** - with the reason in 1-2 lines (docs only, tests only, a local change the current review covers with no open finding and a green suite, a mechanical change).
-- **🙋 Precisa de você** - with each question as one sentence, a short `file:line` link and two named choices (`Responda: confirmado / espera produto`), and the action to take first when the review is outdated by a delta that matters.
+- **✅ APROVA** - why, in one sentence (docs only, tests only, a local change the current review covers with no open finding and a green suite, a mechanical change).
+- **❌ NÃO APROVA** - what stops the approval, in one sentence; then what has to happen to approve: each question as one sentence, a short `file:line` and two named choices (`Responda: confirmado, aprovo / espera produto`), or the action to take when the review is outdated by a delta that matters; and last, what is already covered.
 
-The result is made for the terminal: no HTML, no long links, no rule codes, about 6 lines per PR (the question, why, and `Responda: a / b`), and `scripts/lint_terminal.py` checks that before anything is printed.
+```
+## cr-double-check 22/10 - ❌ 1 não aprova · ✅ 1 aprova
+
+- ❌ NÃO APROVA - shop#7 - a limpeza apaga pedidos de qualquer status e ninguém confirmou que é intencional - https://github.com/acme/shop/pull/7
+- ✅ APROVA - shop#8 - só muda o texto de um botão e o review cobre o head - https://github.com/acme/shop/pull/8
+
+### shop#7 - Total do carrinho
+❌ NÃO APROVA - a limpeza apaga pedidos de qualquer status e ninguém confirmou que é intencional
+- **A limpeza deve apagar pedidos de qualquer status?**
+  - Por quê: `jobs/cleanup.rb:12` não filtra o status.
+  - Responda: **só cancelados, ajustar** / **qualquer status, aprovo**
+- **Coberto:** delta depois do review, achado do CR aplicado
+
+Detalhe completo: /home/u/.cache/cr-double-check/20261022-122102/detalhe.md
+```
+
+The result is made for the terminal: the counts in the header, one verdict line per PR before any block, no HTML, no long links, no rule codes, about 7 lines per NÃO APROVA PR, and `scripts/lint_terminal.py` checks that before anything is printed.
 Everything else (review and CI context, the delta judgment, what was covered and dismissed, the rule IDs) goes to Markdown files under `~/.cache/cr-double-check/<timestamp>/`, one per PR with short-label links and each fact written once, plus an index when the run has several PRs; one absolute path closes the output (the PR's file, or the index).
 It is read-only: no clone, no checkout, and the only write to GitHub is the `--comment` post, which edits its own previous comment instead of piling up.
 **It never approves and never merges a PR.**
@@ -148,7 +164,7 @@ It is read-only: no clone, no checkout, and the only write to GitHub is the `--c
 ### The criteria
 
 The rules are written in [`skills/cr-double-check/references/criteria.md`](skills/cr-double-check/references/criteria.md), each with an ID that every verdict cites, so a verdict can be audited and reproduced.
-In doubt, the verdict is "Precisa de você".
+In doubt, the verdict is "NÃO APROVA".
 
 | Group | What it means | Examples |
 |---|---|---|
@@ -169,9 +185,9 @@ When the review is outdated, the skill does not hand the question to you: `scrip
 ### Tests
 
 `python3 tests/run_fixtures.py` runs the signal script over synthetic PRs in `tests/fixtures/` that cover both verdicts.
-Approve: a docs-only PR, a change covered by a fix pass, an outdated review whose delta only touches the README, a covered change under `docs/conf.py` (code, never docs-only).
-Needs you: an outdated review, a data fix deleting rows under three clean review rounds, a migration with red CI, an open finding, a fake review from an outsider, a review pinned to an old SHA, a commit created before the review but pushed after it, new and major dependencies, a force-push, a Portuguese review with a PLAUSIBLE HIGH, a CI workflow change and an unreadable diff.
-It also checks that `lint_terminal.py` accepts a clean terminal summary and rejects each thing a terminal cannot render (HTML, Markdown links, URLs mid-text, rule codes, a relative or repeated path, an oversized PR block), and that a detail file has no raw URL, how `collect.sh` reads a PR link (an anchor such as `#issuecomment-…` never joins the number), how files are categorized, and that the diff parser does not mistake a removed `-- comment` line for a file header.
+APROVA: a docs-only PR, a change covered by a fix pass, an outdated review whose delta only touches the README, a covered change under `docs/conf.py` (code, never docs-only).
+NÃO APROVA: an outdated review, a data fix deleting rows under three clean review rounds, a migration with red CI, an open finding, a fake review from an outsider, a review pinned to an old SHA, a commit created before the review but pushed after it, new and major dependencies, a force-push, a Portuguese review with a PLAUSIBLE HIGH, a CI workflow change and an unreadable diff.
+It also checks that `lint_terminal.py` accepts a clean terminal summary and rejects each thing a terminal cannot render (HTML, Markdown links, URLs mid-text, rule codes, a relative or repeated path, an oversized PR block) and each break of the verdict-first order (a header without both counts, a PR missing from the summary, a block that does not open with its verdict, a reason longer than one sentence, the old labels), that a detail file opens with its verdict and has no raw URL, how `collect.sh` reads a PR link (an anchor such as `#issuecomment-…` never joins the number), how files are categorized, and that the diff parser does not mistake a removed `-- comment` line for a file header.
 The fixtures are written by `tests/build_fixtures.py`; CI runs the suite on every PR.
 
 ---
