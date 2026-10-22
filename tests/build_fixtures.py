@@ -187,7 +187,7 @@ write("stale-review-docs-only-delta",
 
 write("docs-dir-executable",
       "A PR that only changes docs/conf.py runs at build time: it is code, never docs-only (A1), so it can only reach "
-      "'Aprovar direto' as a covered change (A3).",
+      "'APROVA' as a covered change (A3).",
       pr(["docs/conf.py"], [commit(HEAD, T0, "docs: switch the theme")], [comment(cr_comment(), T1)], green),
       diff_file("docs/conf.py", ["html_theme = 'furo'"], removed=["html_theme = 'alabaster'"], start=20),
       {"verdict": "aprovar", "rule": "A3", "gates": [], "flags_include": ["T2"], "bucket": "code"})

@@ -4,7 +4,7 @@
 Each case is a synthetic PR (metadata, diff, timeline events) plus the expected outcome.
 The runner writes the case as the bundle collect.sh would, runs signals.py on it, and checks:
 
-  gates             exactly these rule IDs are gates (the mechanical "Precisa de você")
+  gates             exactly these rule IDs are gates (the mechanical "NÃO APROVA")
   flags_include     at least these rule IDs are flags (leads the agent must judge)
   verdict           "aprovar" requires zero gates; "precisa" with no gate is a judgment case
   bucket, ci, ...   the other expected fields, when present
@@ -12,7 +12,8 @@ The runner writes the case as the bundle collect.sh would, runs signals.py on it
 It also runs a few unit checks on the pieces a fixture cannot reach: how collect.sh reads a
 PR reference (no network), how a file is categorized, how the diff parser handles a
 removed line that looks like a file header, and that lint_terminal.py accepts a clean
-terminal summary and rejects each thing a terminal cannot render.
+terminal summary and rejects each thing a terminal cannot render and each break of the
+verdict-first order (no verdict line, a question before it, a PR missing from the summary).
 
 The verdict of a judgment case is the documented answer the skill must reach by reading;
 the runner cannot execute that reading, so it checks that the gates do not contradict it.
@@ -107,39 +108,85 @@ HEADER_LOOKALIKE_DIFF = (
 )
 
 
-GOOD_TERMINAL = """## cr-double-check 01/10 - você decide 1 PR (1 pergunta) · 1 para aprovar direto
+REASON_7 = "a limpeza apaga pedidos de qualquer status e ninguém confirmou que é intencional"
+GOOD_TERMINAL = f"""## cr-double-check 01/10 - ❌ 1 não aprova · ✅ 1 aprova
 
-### 🙋 shop#7 - Total do carrinho - https://github.com/acme/shop/pull/7
+- ❌ NÃO APROVA - shop#7 - {REASON_7} - https://github.com/acme/shop/pull/7
+- ✅ APROVA - shop#8 - só muda o texto de um botão e o review cobre o head - https://github.com/acme/shop/pull/8
+
+### shop#7 - Total do carrinho
+❌ NÃO APROVA - {REASON_7}
 - **A limpeza deve apagar pedidos de qualquer status?**
   - Por quê: `jobs/cleanup.rb:12` não filtra o status.
-  - Responda: **só cancelados, ajustar** / **qualquer status, intencional**
+  - Responda: **só cancelados, ajustar** / **qualquer status, aprovo**
 - **Coberto:** delta depois do review, achado do CR aplicado
-
-### ✅ Aprovar direto (1)
-- ✅ **shop#8** - Texto do botão - só muda um texto, review cobre o head - https://github.com/acme/shop/pull/8
 
 Detalhe completo: /home/u/.cache/cr-double-check/20261001-100000/detalhe.md
 """
-GOOD_DETAIL = """## [shop#7](https://github.com/acme/shop/pull/7) - Total do carrinho
+GOOD_TERMINAL_ACTION = """## cr-double-check 01/10 - ❌ 1 não aprova · ✅ 0 aprova · 1 fora
+
+- ❌ NÃO APROVA - shop#9 - o review não viu a nova regra de frete que entrou depois dele - https://github.com/acme/shop/pull/9
+
+### shop#9 - Frete por região
+❌ NÃO APROVA - o review não viu a nova regra de frete que entrou depois dele
+**Para aprovar:** rode o CR só no delta - `checkout/shipping.rb` ganhou uma regra nova depois do review.
+
+### Fora desta rodada (1)
+- shop#10 - rascunho
+
+Detalhe completo: /home/u/.cache/cr-double-check/20261001-100000/acme-shop-9/detalhe.md
+"""
+GOOD_DETAIL = f"""## [shop#7](https://github.com/acme/shop/pull/7) - Total do carrinho
+
+❌ NÃO APROVA - {REASON_7}
 
 Head [commit abc1234](https://github.com/acme/shop/commit/abc1234) · CI verde
 
 - A limpeza não filtra o status: [cleanup.rb:12](https://github.com/acme/shop/blob/abc1234/jobs/cleanup.rb#L12).
+"""
+GOOD_INDEX = f"""# cr-double-check 01/10 - detalhe por PR
+
+- ❌ NÃO APROVA - [shop#7](https://github.com/acme/shop/pull/7) - {REASON_7} - [detalhe](acme-shop-7/detalhe.md)
+- ✅ APROVA - [shop#8](https://github.com/acme/shop/pull/8) - só muda o texto de um botão - [detalhe](acme-shop-8/detalhe.md)
+- Fora: [shop#10](https://github.com/acme/shop/pull/10) - rascunho
 """
 BAD_DETAIL = {
     "raw url": GOOD_DETAIL.replace("[cleanup.rb:12](https://github.com/acme/shop/blob/abc1234/jobs/cleanup.rb#L12)",
                                    "https://github.com/acme/shop/blob/abc1234/jobs/cleanup.rb#L12"),
     "url as label": GOOD_DETAIL.replace("[shop#7]", "[https://github.com/acme/shop/pull/7]"),
     "html": GOOD_DETAIL + "<details>\n",
+    "no verdict under the title": GOOD_DETAIL.replace(f"❌ NÃO APROVA - {REASON_7}\n\n", ""),
+    "old verdict label": GOOD_DETAIL.replace("❌ NÃO APROVA", "🙋 Precisa de você"),
+    "index line without verdict": GOOD_INDEX.replace("- ✅ APROVA - [shop#8]", "- [shop#8]"),
 }
+BLOCK_VERDICT = f"### shop#7 - Total do carrinho\n❌ NÃO APROVA - {REASON_7}\n"
 BAD_TERMINAL = {
     "html": GOOD_TERMINAL.replace("- **Coberto:**", "<details>\n- **Coberto:**"),
     "markdown link": GOOD_TERMINAL.replace("`jobs/cleanup.rb:12`", "[cleanup.rb:12](https://github.com/acme/shop/blob/abc/jobs/cleanup.rb#L12)"),
     "url mid-text": GOOD_TERMINAL.replace("não filtra o status.", "não filtra o status (https://github.com/acme/shop/pull/7)."),
+    "url on the block heading": GOOD_TERMINAL.replace("### shop#7 - Total do carrinho", "### shop#7 - Total do carrinho - https://github.com/acme/shop/pull/7"),
     "rule code": GOOD_TERMINAL.replace("Por quê:", "Por quê (H1):"),
     "relative detail path": GOOD_TERMINAL.replace("Detalhe completo: /home/u/", "Detalhe completo: ~/"),
     "two detail paths": GOOD_TERMINAL + "- shop#7: /home/u/.cache/cr-double-check/20261001-100000/acme-shop-7/detalhe.md\n",
     "oversized block": GOOD_TERMINAL.replace("- **Coberto:**", "  - O review tinha uma lacuna.\n- **Coberto:**"),
+    "block without verdict line": GOOD_TERMINAL.replace(BLOCK_VERDICT, "### shop#7 - Total do carrinho\n"),
+    "question before the verdict": GOOD_TERMINAL.replace(BLOCK_VERDICT, "### shop#7 - Total do carrinho\n")
+        .replace("- **Coberto:**", f"❌ NÃO APROVA - {REASON_7}\n- **Coberto:**"),
+    "verdict line differs from summary": GOOD_TERMINAL.replace(BLOCK_VERDICT, "### shop#7 - Total do carrinho\n❌ NÃO APROVA - falta uma decisão\n"),
+    "NÃO APROVA with nothing that unblocks it": GOOD_TERMINAL.replace(
+        "- **A limpeza deve apagar pedidos de qualquer status?**\n  - Por quê: `jobs/cleanup.rb:12` não filtra o status.\n"
+        "  - Responda: **só cancelados, ajustar** / **qualquer status, aprovo**\n", ""),
+    "APROVA with a block": GOOD_TERMINAL.replace("\nDetalhe completo:", "### shop#8 - Texto do botão\n✅ APROVA - só muda o texto de um botão e o review cobre o head\n\nDetalhe completo:"),
+    "PR missing from the summary": GOOD_TERMINAL.replace(f"- ❌ NÃO APROVA - shop#7 - {REASON_7} - https://github.com/acme/shop/pull/7\n", ""),
+    "header counts wrong": GOOD_TERMINAL.replace("✅ 1 aprova", "✅ 2 aprova"),
+    "header without counts": GOOD_TERMINAL.replace("❌ 1 não aprova · ✅ 1 aprova", "você decide 1 PR"),
+    "APROVA listed first": GOOD_TERMINAL.replace(f"- ❌ NÃO APROVA - shop#7 - {REASON_7} - https://github.com/acme/shop/pull/7\n", "")
+        .replace("- ✅ APROVA - shop#8 - só muda o texto de um botão e o review cobre o head - https://github.com/acme/shop/pull/8\n",
+                 "- ✅ APROVA - shop#8 - só muda o texto de um botão e o review cobre o head - https://github.com/acme/shop/pull/8\n"
+                 f"- ❌ NÃO APROVA - shop#7 - {REASON_7} - https://github.com/acme/shop/pull/7\n"),
+    "reason of two sentences": GOOD_TERMINAL.replace(REASON_7, "a limpeza apaga tudo. Ninguém confirmou"),
+    "old verdict label": GOOD_TERMINAL.replace("### shop#7 - Total do carrinho", "### 🙋 shop#7 - Total do carrinho"),
+    "Para aprovar after a question": GOOD_TERMINAL.replace("- **Coberto:**", "**Para aprovar:** rode o CR no delta - mudou depois.\n- **Coberto:**"),
 }
 
 
@@ -147,19 +194,23 @@ def run_units() -> list[str]:
     problems = []
     with tempfile.TemporaryDirectory() as tmp:
         sample = Path(tmp) / "terminal.md"
-        sample.write_text(GOOD_TERMINAL, encoding="utf-8")
-        out = subprocess.run([sys.executable, str(LINT), str(sample)], capture_output=True, text=True)
-        if out.returncode != 0:
-            problems.append(f"lint_terminal.py rejected a clean summary: {out.stdout.strip()}")
+        for good in (GOOD_TERMINAL, GOOD_TERMINAL_ACTION):
+            sample.write_text(good, encoding="utf-8")
+            out = subprocess.run([sys.executable, str(LINT), str(sample)], capture_output=True, text=True)
+            if out.returncode != 0:
+                problems.append(f"lint_terminal.py rejected a clean summary: {out.stdout.strip()}")
         for name, text in BAD_TERMINAL.items():
             sample.write_text(text, encoding="utf-8")
             if subprocess.run([sys.executable, str(LINT), str(sample)], capture_output=True).returncode == 0:
                 problems.append(f"lint_terminal.py accepted a summary with: {name}")
+        index = Path(tmp) / "detalhe.md"
+        index.write_text(GOOD_INDEX, encoding="utf-8")
         sample.write_text(GOOD_DETAIL, encoding="utf-8")
-        out = subprocess.run([sys.executable, str(LINT), "--detail", str(sample)], capture_output=True, text=True)
+        out = subprocess.run([sys.executable, str(LINT), "--detail", str(sample), str(index)], capture_output=True, text=True)
         if out.returncode != 0:
-            problems.append(f"lint_terminal.py --detail rejected a clean detail file: {out.stdout.strip()}")
+            problems.append(f"lint_terminal.py --detail rejected a clean detail file or index: {out.stdout.strip()}")
         for name, text in BAD_DETAIL.items():
+            sample = index if text.startswith("# ") else Path(tmp) / "terminal.md"
             sample.write_text(text, encoding="utf-8")
             if subprocess.run([sys.executable, str(LINT), "--detail", str(sample)], capture_output=True).returncode == 0:
                 problems.append(f"lint_terminal.py --detail accepted a detail file with: {name}")

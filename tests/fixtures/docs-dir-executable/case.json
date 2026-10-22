@@ -1,5 +1,5 @@
 {
-  "about": "A PR that only changes docs/conf.py runs at build time: it is code, never docs-only (A1), so it can only reach 'Aprovar direto' as a covered change (A3).",
+  "about": "A PR that only changes docs/conf.py runs at build time: it is code, never docs-only (A1), so it can only reach 'APROVA' as a covered change (A3).",
   "viewer": "reviewer-bot",
   "repo": "acme/shop",
   "pr": {
